@@ -1,0 +1,60 @@
+name: Pull Request Feedback
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  diff-aware-analysis:
+    name: Diff-Aware Code Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Get changed files
+        id: changed-files
+        run: |
+          echo "Changed files in this PR:"
+          git diff --name-only origin/${{ github.base_ref }}...HEAD
+          echo "files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.py$' | tr '\n' ' ')" >> $GITHUB_OUTPUT
+      
+      - name: Run flake8 on changed files
+        if: steps.changed-files.outputs.files != ''
+        run: |
+          FILES="${{ steps.changed-files.outputs.files }}"
+          if [ -n "$FILES" ]; then
+            echo "Running flake8 on changed Python files: $FILES"
+            flake8 $FILES || true
+          else
+            echo "No Python files changed"
+          fi
+      
+      - name: Run tests for changed modules
+        if: steps.changed-files.outputs.files != ''
+        run: |
+          echo "Running relevant tests..."
+          pytest tests/ --verbose || true
+      
+      - name: Generate feedback summary
+        if: always()
+        run: |
+          echo "## Diff-Aware Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow analyzes only the files changed in this PR." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changed Files" >> $GITHUB_STEP_SUMMARY
+          git diff --name-only origin/${{ github.base_ref }}...HEAD >> $GITHUB_STEP_SUMMARY || echo "No changes detected" >> $GITHUB_STEP_SUMMARY
