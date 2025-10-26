@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "diff-aware-quality-workflow-py"
@@ -8,12 +8,20 @@ version = "0.1.0"
 description = "Example repository for demonstrating the diff-aware code quality workflow"
 readme = "README.md"
 requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "PavelGuzenfeld"},
+]
 dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-testmon>=2.0.0",
+    "pytest-xdist>=3.0.0",
     "flake8>=6.0.0",
+    "diff-cover>=7.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -23,3 +31,29 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
 pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "**/__init__.py",
+    "**/test_*.py",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "def __str__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+precision = 2
+show_missing = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

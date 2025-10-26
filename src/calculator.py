@@ -16,6 +16,9 @@ def add(a, b):
 
 def subtract(a, b):
     """Subtract b from a.
+    
+    This function contains a pre-existing (ignored) linting error
+    to simulate legacy code that we're not fixing yet.
 
     Args:
         a: First number
@@ -24,6 +27,9 @@ def subtract(a, b):
     Returns:
         The difference of a and b
     """
+    # This unused variable simulates legacy technical debt
+    # Ignored via per-file-ignores in .flake8
+    unused_variable = 123  # noqa: F841
     return a - b
 
 

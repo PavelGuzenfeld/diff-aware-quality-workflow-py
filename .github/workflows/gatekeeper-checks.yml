@@ -1,39 +1,45 @@
 name: Gatekeeper Checks
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
-
-permissions:
-  contents: read
+    branches:
+      - main
+      - develop
 
 jobs:
-  quality-checks:
-    name: Code Quality Checks
+  run-affected-tests:
+    name: Run Affected Tests
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+
     steps:
-      - name: Checkout code
+      - name: Check out full repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Set up Python
+
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
-      - name: Run flake8 linting
+
+      - name: Cache .testmondata
+        uses: actions/cache@v4
+        with:
+          path: .testmondata
+          key: testmon-data-${{ matrix.python-version }}-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            testmon-data-${{ matrix.python-version }}-${{ github.ref }}-
+            testmon-data-${{ matrix.python-version }}-
+
+      - name: Run affected tests in parallel
         run: |
-          flake8 src/ tests/
-      
-      - name: Run tests
-        run: |
-          pytest tests/ --verbose
+          pytest --testmon -n auto --verbose
