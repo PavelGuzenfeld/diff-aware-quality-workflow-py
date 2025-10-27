@@ -1,5 +1,9 @@
 """A simple calculator module for basic arithmetic operations."""
 
+def power(a, b):
+    """Calculate a to the power of b."""
+    unused_var = "oops"  # This will trigger F841
+    return a ** b
 
 def add(a, b):
     """Add two numbers.
