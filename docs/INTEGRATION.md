@@ -176,7 +176,17 @@ jobs:
 
 See [`configs/ci-infer.yml`](../configs/ci-infer.yml) for the full template.
 
-### 5. Add Pre-commit Hooks
+### 5. Add Agent Instructions
+
+If your team uses AI coding agents (Claude Code, Copilot, Cursor, Codex, etc.), copy the agent instructions template:
+
+```bash
+cp configs/AGENTS.md AGENTS.md
+```
+
+Edit the "Opt-in" section to match which checks your project has enabled. This tells agents what conventions to follow so generated code passes CI on the first push.
+
+### 6. Add Pre-commit Hooks
 
 Copy the template and install:
 
@@ -186,7 +196,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-### 6. Add CMake Presets & Warning Flags
+### 7. Add CMake Presets & Warning Flags
 
 ```bash
 cp configs/CMakePresets-sanitizers.json CMakePresets.json

@@ -170,6 +170,7 @@ jobs:
 | [`cmake-warnings.cmake`](configs/cmake-warnings.cmake) | Warning flags: -Wall -Wextra -Wpedantic -Werror + extras |
 | [`test-checklist.md`](configs/test-checklist.md) | Mandatory test edge case checklist (11 categories) |
 | [`repo-structure-ros2.txt`](configs/repo-structure-ros2.txt) | ROS2 package structure validation template |
+| [`AGENTS.md`](configs/AGENTS.md) | AI agent instructions template for consuming projects |
 
 ## Scripts
 
@@ -194,13 +195,14 @@ Standalone scripts for local development (same logic as CI):
   gatekeeper-checks.yml     Push checks for this repo
   pull-request-feedback.yml PR feedback for this repo
 scripts/                    Standalone diff-aware scripts for local use
-configs/                    Drop-in configs and CI templates (14 files)
+configs/                    Drop-in configs, CI templates, and agent instructions (15 files)
 tests/
   test_patterns.sh          Pattern validation tests (109 tests)
   test_calculator.py        Python demo tests
 docs/
   SDLC.md                   Full software development lifecycle document
   INTEGRATION.md            Step-by-step integration guide
+AGENTS.md                   AI agent instructions for contributing to this repo
 src/calculator.py           Python demo module
 ```
 
