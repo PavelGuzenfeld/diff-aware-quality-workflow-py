@@ -51,4 +51,3 @@ select = ["E", "W", "F", "I"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/calculator.py" = ["F841"]
