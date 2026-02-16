@@ -42,6 +42,8 @@ jobs:
 | `cppcheck_std` | `c++23` | C++ standard for cppcheck |
 | `runner` | `ubuntu-latest` | Runner label |
 | `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
+| `enforce_doctest` | `false` | Require doctest instead of gtest in test files |
+| `test_file_pattern` | `test` | Grep pattern to identify test files (matched against path) |
 
 ### Python Quality (reusable workflow)
 
