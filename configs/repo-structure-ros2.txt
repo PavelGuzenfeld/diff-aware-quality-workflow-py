@@ -1,0 +1,30 @@
+# repo-structure-ros2.txt — Expected ROS2 package structure
+#
+# Format:
+#   dir:path/    Required directory (error if missing)
+#   dir?path/    Optional directory (warning if missing)
+#   file:path    Required file (error if missing)
+#   file?path    Optional file (warning if missing)
+#
+# Lines starting with # and blank lines are ignored.
+
+# Required directories
+dir:src/
+dir:include/
+
+# Optional directories
+dir?test/
+dir?tests/
+dir?launch/
+dir?config/
+dir?msg/
+dir?srv/
+dir?action/
+
+# Required files
+file:CMakeLists.txt
+file:package.xml
+
+# Optional files
+file?README.md
+file?CHANGELOG.md
