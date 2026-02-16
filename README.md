@@ -52,7 +52,7 @@ jobs:
   python:
     uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/python-quality.yml@main
     with:
-      python_version: '3.10'
+      python_version: '3.12'
       python_linter: ruff
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `python_version` | `3.10` | Python version to use |
+| `python_version` | `3.12` | Python version to use |
 | `target_python` | `py38` | Target Python version for ruff |
 | `python_linter` | `ruff` | Linter backend: `ruff` (fast, modern) or `flake8` (ROS2/ament compat) |
 | `source_dirs` | `src` | Source directories |

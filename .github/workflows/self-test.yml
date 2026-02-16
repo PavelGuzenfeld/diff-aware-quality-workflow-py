@@ -10,7 +10,7 @@ jobs:
   python-quality:
     uses: ./.github/workflows/python-quality.yml
     with:
-      python_version: '3.10'
+      python_version: '3.12'
       python_linter: 'ruff'
       source_dirs: 'src'
       test_dirs: 'tests'
