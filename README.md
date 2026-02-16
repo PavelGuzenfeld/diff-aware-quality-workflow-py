@@ -48,6 +48,9 @@ jobs:
 | `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
 | `enforce_doctest` | `false` | Require doctest instead of gtest in test files |
 | `test_file_pattern` | `test` | Grep pattern to identify test files (matched against path) |
+| `enable_file_naming` | `false` | Enable file/directory naming convention check (snake_case, opt-in) |
+| `file_naming_exceptions` | `''` | Path to file with additional naming exception regexes (one per line) |
+| `file_naming_allowed_prefixes` | `_` | Space-separated allowed prefixes for file/dir names |
 
 ### Python Quality (reusable workflow)
 
@@ -135,8 +138,9 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 3. Run cppcheck on changed files inside Docker
 4. Run clang-format on changed files (if enabled)
 5. Check for gtest usage in test files (if doctest enforcement enabled)
-6. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
-7. Post summary comment
+6. Check file/directory naming conventions (if file naming enabled)
+7. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
+8. Post summary comment
 
 ### Python Pipeline
 
@@ -153,8 +157,44 @@ The `configs/` directory contains default configs suitable for most C++ projects
 - `configs/.clang-tidy` — clang-analyzer, cppcoreguidelines, modernize, bugprone, performance, readability checks with sensible exclusions
 - `configs/.clang-format` — C++23 config: 120-col line limit, 4-space indent, Allman-style braces, right-aligned pointers
 - `configs/cppcheck.suppress` — generic suppressions (unusedFunction, shadowVariable, etc.) with commented vendor examples
+- `configs/.clang-tidy-naming` — `readability-identifier-naming` CheckOptions (snake_case functions, PascalCase types, trailing `_` for private members)
+- `configs/naming-exceptions.txt` — template for file naming exception patterns (one regex per line)
+- `configs/repo-structure-ros2.txt` — sample ROS2 package structure config for `check-repo-structure.sh`
 
 Copy these into your repo and customize as needed.
+
+### Identifier Naming with clang-tidy
+
+The `configs/.clang-tidy-naming` file provides `readability-identifier-naming` CheckOptions that enforce:
+
+| Identifier | Convention | Example |
+|-----------|-----------|---------|
+| Functions/methods | `snake_case` | `process_data()` |
+| Variables/parameters | `snake_case` | `frame_count` |
+| Classes/structs/enums | `PascalCase` | `DataProcessor` |
+| Private/protected members | `snake_case_` (trailing `_`) | `buffer_` |
+| Public members | `snake_case` | `frame_id` |
+| Namespaces | `snake_case` | `nav_utils` |
+| Constants/constexpr | `UPPER_CASE` | `MAX_RETRIES` |
+| Enum constants | `PascalCase` | `ReadyState` |
+| Macros | `UPPER_CASE` | `LOG_DEBUG` |
+| Template parameters | `PascalCase` | `ValueType` |
+
+To use, add `readability-identifier-naming` to your `.clang-tidy` Checks and merge the CheckOptions from this file.
+
+### File Naming Convention
+
+When `enable_file_naming` is enabled, the workflow checks that all changed file and directory names follow `snake_case` convention (`^[a-z][a-z0-9_]*$`).
+
+**Built-in exceptions** (always exempt):
+- Well-known files: `CMakeLists.txt`, `Dockerfile`, `README.md`, `LICENSE`, `Makefile`, `package.xml`, `pyproject.toml`, `Cargo.toml`, etc.
+- Dotfiles/dotdirs: `.gitignore`, `.github/`, `.clang-tidy`, etc.
+- Python special files: `__init__.py`, `__main__.py`, `__pycache__/`, `py.typed`
+- Requirements files: `requirements*.txt`
+
+**Allowed prefixes** (`file_naming_allowed_prefixes`): For mixed C++/Python projects, leading prefixes like `_` are allowed. For example, with prefix `_`, the name `_bindings.so` is valid because `bindings` passes the snake_case check.
+
+**Custom exceptions** (`file_naming_exceptions`): Point to a file with one regex per line. Lines starting with `#` and blank lines are ignored. Each regex is matched against path segments (directory names or filenames).
 
 ## Scripts
 
@@ -172,6 +212,13 @@ CPPCHECK_INCLUDES="/opt/ros/humble/include" \
 # clang-format on changed files
 CLANG_FORMAT_CONFIG=.clang-format \
 ./scripts/diff-clang-format.sh origin/main "cpp hpp h"
+
+# file naming convention check
+NAMING_ALLOWED_PREFIXES="_" \
+./scripts/diff-file-naming.sh origin/main naming-exceptions.txt
+
+# repo structure validation
+./scripts/check-repo-structure.sh configs/repo-structure-ros2.txt /path/to/package
 ```
 
 ## Project Structure
@@ -187,10 +234,15 @@ scripts/
   diff-clang-tidy.sh    Standalone clang-tidy diff script
   diff-cppcheck.sh      Standalone cppcheck diff script
   diff-clang-format.sh  Standalone clang-format diff script
+  diff-file-naming.sh   Standalone file naming convention check
+  check-repo-structure.sh  Standalone repo structure validation
 configs/
   .clang-tidy           Default clang-tidy config
   .clang-format         Default clang-format config (C++23, Allman braces, 120-col)
+  .clang-tidy-naming    Identifier naming CheckOptions for readability-identifier-naming
   cppcheck.suppress     Default cppcheck suppressions
+  naming-exceptions.txt Template for file naming exception patterns
+  repo-structure-ros2.txt  Sample ROS2 package structure config
 src/calculator.py       Python demo module
 tests/test_calculator.py  Python demo tests
 pyproject.toml          Ruff, pytest, coverage config
