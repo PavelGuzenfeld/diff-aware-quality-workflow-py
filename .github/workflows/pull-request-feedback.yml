@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write  # Required to post comments on the PR
+  pull-requests: write
 
 jobs:
   quality-checks:
@@ -30,12 +30,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run diff-aware linting with flake8
-        id: flake8-diff
+      - name: Run diff-aware linting with ruff
+        id: ruff-diff
         run: |
-          # Compare the current branch with the PR's base branch.
-          # Pipe the diff with zero context lines (-U0) to flake8 --diff.
-          git diff -U0 origin/${{ github.base_ref }} -- '*.py' | flake8 --diff
+          diff-quality --violations=ruff.check \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=100
         continue-on-error: true
 
       - name: Run affected tests and collect coverage
@@ -45,41 +45,69 @@ jobs:
       - name: Generate diff coverage report
         id: diff-cover
         run: |
-          # Generate the report and capture output
           echo "DIFF_COVER_REPORT<<EOF" >> $GITHUB_ENV
-          diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} --markdown-report=diff-cover.md || true
-          cat diff-cover.md >> $GITHUB_ENV 2>/dev/null || diff-cover coverage.xml --compare-branch=origin/${{ github.base_ref }} >> $GITHUB_ENV
+          diff-cover coverage.xml \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --markdown-report=diff-cover.md || true
+          cat diff-cover.md >> $GITHUB_ENV 2>/dev/null || \
+            diff-cover coverage.xml \
+              --compare-branch=origin/${{ github.base_ref }} >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
         continue-on-error: true
 
-      - name: Post coverage report as a PR comment
+      - name: Post or update quality report as PR comment
         uses: actions/github-script@v7
         if: always()
         with:
           script: |
+            const marker = '<!-- quality-report -->';
             const output = process.env.DIFF_COVER_REPORT || 'No coverage data available';
-            
-            // Create comment body
-            let commentBody = '## 📊 Diff Coverage Report\n\n';
-            
-            if (output.includes('No coverage data available')) {
-              commentBody += '⚠️ No coverage data was generated for this PR.\n';
+            const ruffResult = '${{ steps.ruff-diff.outcome }}';
+
+            let body = marker + '\n## Diff Quality Report\n\n';
+
+            // Lint status
+            if (ruffResult === 'failure') {
+              body += '**Lint**: ruff found issues in changed lines\n\n';
             } else {
-              commentBody += output;
+              body += '**Lint**: clean\n\n';
             }
-            
-            commentBody += '\n\n---\n*This report shows coverage only for lines changed in this PR.*';
-            
-            // Post comment
-            await github.rest.issues.createComment({
+
+            // Coverage
+            if (output.includes('No coverage data available')) {
+              body += 'No coverage data was generated for this PR.\n';
+            } else {
+              body += output;
+            }
+
+            body += '\n\n---\n*This report shows quality metrics only for lines changed in this PR.*';
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: commentBody
             });
+            const existing = comments.find(c => c.body.includes(marker));
 
-      - name: Check flake8 status
-        if: steps.flake8-diff.outcome == 'failure'
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
+
+      - name: Check ruff status
+        if: steps.ruff-diff.outcome == 'failure'
         run: |
-          echo "❌ Flake8 found linting issues in your changes"
+          echo "Ruff found linting issues in your changes"
           exit 1

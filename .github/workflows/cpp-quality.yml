@@ -1,0 +1,236 @@
+name: C++ Quality Checks
+
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        type: string
+        required: true
+        description: 'Docker image with clang-tidy, cppcheck, and compile_commands.json'
+      compile_commands_path:
+        type: string
+        default: 'build'
+        description: 'Path to directory containing compile_commands.json (inside container)'
+      source_mount:
+        type: string
+        default: '/workspace/src'
+        description: 'Where repo source is mounted inside the container'
+      clang_tidy_config:
+        type: string
+        default: ''
+        description: 'Path to .clang-tidy config (empty = use repo default)'
+      cppcheck_suppress:
+        type: string
+        default: ''
+        description: 'Path to cppcheck suppressions file'
+      cppcheck_includes:
+        type: string
+        default: ''
+        description: 'Space-separated include directories for cppcheck'
+      cppcheck_std:
+        type: string
+        default: 'c++23'
+        description: 'C++ standard for cppcheck'
+      runner:
+        type: string
+        default: 'ubuntu-latest'
+        description: 'Runner label (e.g., self-hosted)'
+      file_extensions:
+        type: string
+        default: 'cpp hpp h cc cxx'
+        description: 'Space-separated C++ file extensions to check'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed C++ files
+        id: changed
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No C++ files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_cpp_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Run clang-tidy in Docker
+        if: steps.changed.outputs.skip == 'false'
+        id: clang-tidy
+        run: |
+          CONFIG_ARG=""
+          if [ -n "${{ inputs.clang_tidy_config }}" ]; then
+            CONFIG_ARG="--config-file=${{ inputs.clang_tidy_config }}"
+          fi
+
+          ERRORS=0
+          RESULTS=""
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            OUTPUT=$(docker run --rm \
+              -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+              -w "${{ inputs.source_mount }}" \
+              "${{ inputs.docker_image }}" \
+              clang-tidy -p "${{ inputs.compile_commands_path }}" $CONFIG_ARG "$file" 2>&1 || true)
+
+            if [ -n "$OUTPUT" ]; then
+              RESULTS="${RESULTS}${OUTPUT}\n"
+              # Emit GitHub annotations
+              echo "$OUTPUT" | grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                ann_line=$(echo "$line" | cut -d: -f2)
+                ann_col=$(echo "$line" | cut -d: -f3)
+                severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+                message=$(echo "$line" | cut -d: -f5-)
+                if [ "$severity" = "error" ]; then
+                  echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
+                else
+                  echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
+                fi
+              done
+              ERR_COUNT=$(echo "$OUTPUT" | grep -cE '^.+:[0-9]+:[0-9]+: error:' || true)
+              ERRORS=$((ERRORS + ERR_COUNT))
+            fi
+          done < /tmp/changed_cpp_files.txt
+
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+
+          # Save results for summary
+          echo -e "$RESULTS" > /tmp/clang_tidy_output.txt
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "clang-tidy found $ERRORS error(s)."
+            exit 1
+          fi
+
+  cppcheck:
+    name: cppcheck
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed C++ files
+        id: changed
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No C++ files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_cpp_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Run cppcheck in Docker
+        if: steps.changed.outputs.skip == 'false'
+        id: cppcheck
+        run: |
+          CPPCHECK_ARGS="--enable=warning,style,performance,portability --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr --error-exitcode=0"
+
+          if [ -n "${{ inputs.cppcheck_suppress }}" ] && [ -f "${{ inputs.cppcheck_suppress }}" ]; then
+            CPPCHECK_ARGS="$CPPCHECK_ARGS --suppressions-list=${{ inputs.cppcheck_suppress }}"
+          fi
+
+          INCLUDE_ARGS=""
+          if [ -n "${{ inputs.cppcheck_includes }}" ]; then
+            for dir in ${{ inputs.cppcheck_includes }}; do
+              INCLUDE_ARGS="$INCLUDE_ARGS -I $dir"
+            done
+          fi
+
+          FILES=$(cat /tmp/changed_cpp_files.txt | tr '\n' ' ')
+
+          OUTPUT=$(docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "cppcheck $CPPCHECK_ARGS $INCLUDE_ARGS $FILES" 2>&1 || true)
+
+          ERRORS=0
+          if [ -n "$OUTPUT" ]; then
+            echo "$OUTPUT"
+            echo "$OUTPUT" > /tmp/cppcheck_output.txt
+
+            # Emit GitHub annotations
+            echo "$OUTPUT" | grep -E '^.+:[0-9]+:.*(error|warning|style|performance|portability):' | while IFS= read -r line; do
+              ann_file=$(echo "$line" | cut -d: -f1)
+              ann_line=$(echo "$line" | cut -d: -f2)
+              severity=$(echo "$line" | cut -d: -f3 | tr -d ' ')
+              message=$(echo "$line" | cut -d: -f4-)
+              case "$severity" in
+                error) echo "::error file=${ann_file},line=${ann_line}::${message}" ;;
+                *)     echo "::warning file=${ann_file},line=${ann_line}::${message}" ;;
+              esac
+            done
+
+            ERRORS=$(echo "$OUTPUT" | grep -cE '^.+:[0-9]+:.*error:' || true)
+          fi
+
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "cppcheck found $ERRORS error(s)."
+            exit 1
+          fi
+
+  summary:
+    name: Post Summary
+    runs-on: ${{ inputs.runner }}
+    needs: [clang-tidy, cppcheck]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- cpp-quality-report -->';
+            const tidy = '${{ needs.clang-tidy.result }}';
+            const check = '${{ needs.cppcheck.result }}';
+
+            let body = marker + '\n## C++ Quality Report\n\n';
+            body += '| Tool | Status |\n|------|--------|\n';
+            body += `| clang-tidy | ${tidy === 'success' || tidy === 'skipped' ? 'clean' : 'issues found'} |\n`;
+            body += `| cppcheck | ${check === 'success' || check === 'skipped' ? 'clean' : 'issues found'} |\n`;
+            body += '\n---\n*Only files changed in this PR were checked.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }

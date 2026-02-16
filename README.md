@@ -1,412 +1,189 @@
-# Diff-Aware Code Quality Workflow Demo
+# Diff-Aware Quality Workflows
 
-Example repository demonstrating a production-ready, diff-aware CI/CD workflow for Python projects using GitHub Actions.
+Reusable GitHub Actions workflow templates for diff-aware code quality checks. Lint and analyze only the files changed in a PR — no noise from legacy code.
 
-## 🎯 Goal
+Supports **C++** (clang-tidy, cppcheck) and **Python** (ruff/flake8, diff-cover, pytest).
 
-Enforce high quality standards on **new and modified code** without being blocked by technical debt in the existing codebase.
+## Usage
 
-## ✨ Key Features
+### C++ Quality (reusable workflow)
 
-### 1. **Diff-Aware Linting**
-Only new or modified lines are linted using `flake8 --diff`.
+Call from your repository's workflow:
 
-### 2. **Intelligent Test Selection**
-Only tests affected by code changes are run using `pytest-testmon`.
+```yaml
+# .github/workflows/quality.yml
+name: Quality Checks
+on:
+  pull_request:
+    branches: [main]
 
-### 3. **Targeted Code Coverage**
-Coverage is measured only for new and modified lines using `diff-cover`.
-
-### 4. **Parallel Execution**
-Selected tests run in parallel for maximum speed using `pytest-xdist`.
-
-### 5. **Separated Workflows**
-- **Gatekeeper**: Fast checks on pushes to main (multi-version, parallel)
-- **Collaborator**: Detailed PR feedback with line-by-line analysis
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│           Push to main/develop              │
-└─────────────────┬───────────────────────────┘
-                  │
-                  ▼
-        ┌─────────────────────┐
-        │ Gatekeeper Workflow │
-        │  (Fast & Parallel)  │
-        └─────────────────────┘
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-  ┌──────────┐        ┌──────────┐
-  │ Python   │   ...  │ Python   │
-  │  3.8     │        │  3.12    │
-  └──────────┘        └──────────┘
-        │                   │
-        └─────────┬─────────┘
-                  ▼
-          Run affected tests
-          with pytest-testmon
-
-
-┌─────────────────────────────────────────────┐
-│            Open Pull Request                │
-└─────────────────┬───────────────────────────┘
-                  │
-                  ▼
-     ┌────────────────────────────┐
-     │ Pull Request Feedback      │
-     │  (Detailed Analysis)       │
-     └────────────────────────────┘
-                  │
-        ┌─────────┴─────────┐
-        ▼                   ▼
-  ┌──────────┐      ┌────────────────┐
-  │ Diff     │      │ Diff Coverage  │
-  │ Linting  │      │ Report         │
-  └──────────┘      └────────────────┘
-        │                   │
-        └─────────┬─────────┘
-                  ▼
-        Post results as PR comment
+jobs:
+  cpp:
+    uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/cpp-quality.yml@main
+    with:
+      docker_image: ghcr.io/your-org/your-dev-image:latest
+      compile_commands_path: build
+      runner: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
 ```
 
-## 📦 Tech Stack
+#### C++ Inputs
 
-- **Testing**: `pytest`, `pytest-cov`, `pytest-testmon`, `pytest-xdist`
-- **Linting**: `flake8`
-- **Coverage**: `diff-cover`
-- **Build**: `hatchling`
-- **CI/CD**: GitHub Actions
+| Input | Default | Description |
+|-------|---------|-------------|
+| `docker_image` | *required* | Docker image with clang-tidy, cppcheck, and compile_commands.json |
+| `compile_commands_path` | `build` | Path to compile_commands.json inside the container |
+| `source_mount` | `/workspace/src` | Where repo source is mounted inside the container |
+| `clang_tidy_config` | `''` | Path to .clang-tidy config (empty = use repo default) |
+| `cppcheck_suppress` | `''` | Path to cppcheck suppressions file |
+| `cppcheck_includes` | `''` | Space-separated include directories |
+| `cppcheck_std` | `c++23` | C++ standard for cppcheck |
+| `runner` | `ubuntu-latest` | Runner label |
+| `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
 
-## 🚀 Quick Start
+### Python Quality (reusable workflow)
 
-### Prerequisites
-- Python 3.8 or higher
-- Git
+```yaml
+jobs:
+  python:
+    uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/python-quality.yml@main
+    with:
+      python_version: '3.10'
+      python_linter: ruff
+    permissions:
+      contents: read
+      pull-requests: write
+```
 
-### Installation
+#### Python Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `python_version` | `3.10` | Python version to use |
+| `target_python` | `py38` | Target Python version for ruff |
+| `python_linter` | `ruff` | Linter backend: `ruff` (fast, modern) or `flake8` (ROS2/ament compat) |
+| `source_dirs` | `src` | Source directories |
+| `test_dirs` | `tests` | Test directories |
+| `ruff_select` | `E,W,F,I` | Ruff rule selection |
+| `fail_under` | `100` | Minimum diff-quality score (0-100) |
+| `runner` | `ubuntu-latest` | Runner label |
+
+## Full-Featured Example
+
+For C++ projects running on self-hosted ARM64/x64 runners with Docker:
+
+```yaml
+name: Quality Checks
+on:
+  pull_request:
+    branches: [master, dev_for_orin]
+
+jobs:
+  cpp:
+    uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/cpp-quality.yml@main
+    with:
+      docker_image: ghcr.io/your-org/your-dev-image:latest
+      compile_commands_path: build/your_package
+      source_dirs: src/my_package
+      cppcheck_suppress: cppcheck.suppress
+      cppcheck_includes: '/opt/ros/humble/include src/my_package/include'
+      runner: self-hosted
+    secrets: inherit
+```
+
+## How It Works
+
+### Diff-Aware Checking
+
+All workflows detect changed files using `git diff --name-only --diff-filter=ACMR` against the PR base branch. Only those files are linted/analyzed, so pre-existing issues in untouched code never block PRs.
+
+### PR Comment Updates
+
+Each workflow posts a summary comment on the PR with a hidden marker (`<!-- quality-report -->`). On subsequent pushes, the same comment is updated instead of creating duplicates.
+
+### C++ Pipeline
+
+1. Detect changed C++ files
+2. Run clang-tidy on each file inside the caller's Docker image
+3. Run cppcheck on changed files inside Docker
+4. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
+5. Post summary comment
+
+### Python Pipeline
+
+1. Install linter (`ruff` or `flake8` based on `python_linter` input)
+2. Run `diff-quality --violations=<linter>` for diff-aware linting
+3. Run pytest with coverage
+4. Generate diff-cover report (coverage on changed lines only)
+5. Post summary comment
+
+## Default Configs
+
+The `configs/` directory contains default configs suitable for most C++ projects:
+
+- `configs/.clang-tidy` — clang-analyzer, cppcoreguidelines, modernize, bugprone, performance, readability checks with sensible exclusions
+- `configs/cppcheck.suppress` — generic suppressions (unusedFunction, shadowVariable, etc.)
+
+Copy these into your repo and customize as needed.
+
+## Scripts
+
+Standalone scripts for running outside GitHub Actions:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/diff-aware-quality-workflow-py.git
-cd diff-aware-quality-workflow-py
+# clang-tidy on changed files
+./scripts/diff-clang-tidy.sh origin/main build "cpp hpp h"
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# cppcheck on changed files
+CPPCHECK_SUPPRESS=cppcheck.suppress \
+CPPCHECK_INCLUDES="/opt/ros/humble/include" \
+./scripts/diff-cppcheck.sh origin/main
+```
 
-# Install dependencies
+## Project Structure
+
+```
+.github/workflows/
+  cpp-quality.yml       Reusable C++ quality workflow
+  python-quality.yml    Reusable Python quality workflow
+  self-test.yml         Self-test (calls python-quality on demo code)
+  gatekeeper-checks.yml Push checks for this repo
+  pull-request-feedback.yml  PR feedback for this repo
+scripts/
+  diff-clang-tidy.sh    Standalone clang-tidy diff script
+  diff-cppcheck.sh      Standalone cppcheck diff script
+configs/
+  .clang-tidy           Default clang-tidy config
+  cppcheck.suppress     Default cppcheck suppressions
+src/calculator.py       Python demo module
+tests/test_calculator.py  Python demo tests
+pyproject.toml          Ruff, pytest, coverage config
+requirements.txt        Python dependencies
+```
+
+## Demo
+
+This repo includes a Python calculator module (`src/calculator.py`) with tests to demonstrate the Python quality workflow. The `self-test.yml` workflow calls `python-quality.yml` on every push/PR to prove the template works.
+
+The demo includes an intentional legacy lint issue (`unused_variable` in `subtract()`) that is suppressed via `per-file-ignores` in `pyproject.toml` — showing how diff-aware checking tolerates existing debt while enforcing standards on new code.
+
+### Run locally
+
+```bash
 pip install -r requirements.txt
-```
 
-### Run Tests Locally
+# Lint
+ruff check src/ tests/
 
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
+# Test
 pytest --cov
 
-# Run only affected tests (after making changes)
-pytest --testmon
-
-# Run tests in parallel
-pytest -n auto
+# Diff-aware lint (compare against main)
+diff-quality --violations=ruff.check --compare-branch=origin/main
 ```
 
-### Run Linting Locally
+## License
 
-```bash
-# Lint entire codebase
-flake8 src/ tests/
-
-# Lint only changed lines (requires git)
-git diff -U0 main | flake8 --diff
-```
-
-## 🎬 Demo Walkthrough
-
-### Scenario 1: Introducing a New Bug
-
-This demonstrates how the workflow catches issues in new code.
-
-1. **Create a feature branch**
-   ```bash
-   git checkout -b feature/add-power-function
-   ```
-
-2. **Add a new function with a linting issue**
-   
-   Edit `src/calculator.py` and add:
-   ```python
-   def power(a, b):
-       """Calculate a to the power of b."""
-       unused_var = "oops"  # This will trigger F841
-       return a ** b
-   ```
-
-3. **Commit and push**
-   ```bash
-   git add src/calculator.py
-   git commit -m "Add power function"
-   git push origin feature/add-power-function
-   ```
-
-4. **Open a Pull Request**
-   
-   The PR workflow will:
-   - ❌ Catch the `F841` error in the new code
-   - ✅ Ignore the existing `F841` in `subtract()` (legacy code)
-   - 📊 Post coverage report showing the new function
-
-5. **Fix the issue**
-   
-   Remove the unused variable:
-   ```python
-   def power(a, b):
-       """Calculate a to the power of b."""
-       return a ** b
-   ```
-
-6. **Push the fix**
-   ```bash
-   git add src/calculator.py
-   git commit -m "Fix linting issue"
-   git push
-   ```
-
-7. **Workflow passes** ✅
-
-### Scenario 2: Legacy Code Tolerance
-
-This demonstrates how existing issues don't block new work.
-
-1. **Notice the existing issue**
-   
-   `src/calculator.py` has `unused_variable = 123` in `subtract()`
-   
-2. **Verify it's ignored**
-   
-   Check `.flake8`:
-   ```ini
-   per-file-ignores =
-       src/calculator.py:F841
-   ```
-
-3. **Add a new test**
-   
-   Edit `tests/test_calculator.py`:
-   ```python
-   def test_add_zero(self):
-       """Test adding zero."""
-       assert add(5, 0) == 5
-   ```
-
-4. **Commit and create PR**
-   ```bash
-   git checkout -b feature/test-add-zero
-   git add tests/test_calculator.py
-   git commit -m "Add test for adding zero"
-   git push origin feature/test-add-zero
-   ```
-
-5. **PR passes** ✅ despite legacy code issues
-
-### Scenario 3: Performance Benefits
-
-This demonstrates the speed improvements from intelligent test selection.
-
-1. **Make a small change**
-   
-   Edit docstring in `src/calculator.py`:
-   ```python
-   def add(a, b):
-       """Add two numbers together."""  # Changed
-       return a + b
-   ```
-
-2. **Run without testmon** (all tests)
-   ```bash
-   pytest
-   # All 13 tests run
-   ```
-
-3. **Run with testmon** (affected tests only)
-   ```bash
-   pytest --testmon
-   # Only 3 tests run (those testing add function)
-   ```
-
-4. **Observe the speedup** 🚀
-
-## 📁 Project Structure
-
-```
-.
-├── .github/
-│   └── workflows/
-│       ├── gatekeeper-checks.yml      # Fast multi-version testing
-│       └── pull-request-feedback.yml  # Detailed PR analysis
-├── src/
-│   ├── __init__.py
-│   └── calculator.py                  # Example module (with legacy issue)
-├── tests/
-│   ├── __init__.py
-│   └── test_calculator.py             # Comprehensive test suite
-├── .flake8                            # Linting configuration
-├── .gitignore                         # Git ignore rules
-├── pyproject.toml                     # Project metadata & tool configs
-├── requirements.txt                   # Python dependencies
-├── LICENSE                            # MIT License
-└── README.md                          # This file
-```
-
-## ⚙️ Configuration Details
-
-### Gatekeeper Workflow
-
-**Triggers**: Push to `main` or `develop`
-
-**Strategy**:
-- Matrix build across Python 3.8-3.12
-- Parallel execution with `pytest-xdist`
-- Intelligent test selection with `pytest-testmon`
-- Caching of `.testmondata` for speed
-
-**Benefits**:
-- Fast feedback (only affected tests)
-- Multi-version compatibility check
-- Efficient use of CI minutes
-
-### Pull Request Feedback Workflow
-
-**Triggers**: PR opened, synchronized, or reopened
-
-**Features**:
-- Diff-aware linting (`flake8 --diff`)
-- Coverage only on changed lines (`diff-cover`)
-- Automatic PR comments with results
-- Fails PR if new linting issues found
-
-**Benefits**:
-- Clear, actionable feedback
-- No noise from legacy code
-- Encourages quality in new code
-
-### Legacy Code Handling
-
-The `.flake8` configuration uses `per-file-ignores` to suppress known issues:
-
-```ini
-per-file-ignores =
-    src/calculator.py:F841
-```
-
-This allows you to:
-- ✅ Enforce standards on new code
-- ✅ Gradually fix legacy issues
-- ✅ Avoid "big bang" refactoring
-- ✅ Ship features without tech debt blockers
-
-## 🔧 Customization Guide
-
-### Add More Python Versions
-
-Edit `.github/workflows/gatekeeper-checks.yml`:
-```yaml
-strategy:
-  matrix:
-    python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
-```
-
-### Adjust Linting Rules
-
-Edit `.flake8`:
-```ini
-[flake8]
-max-line-length = 100  # Increase line length
-extend-ignore = E203, W503, E402  # Add more ignores
-```
-
-### Change Coverage Thresholds
-
-Edit `pyproject.toml`:
-```toml
-[tool.coverage.report]
-fail_under = 80  # Require 80% coverage
-```
-
-### Add More Test Options
-
-Edit `pyproject.toml`:
-```toml
-[tool.pytest.ini_options]
-addopts = "-v --tb=short --strict-markers"
-```
-
-## 🐛 Troubleshooting
-
-### Tests not being selected by testmon
-
-**Problem**: `pytest --testmon` runs all tests
-
-**Solution**: Delete `.testmondata` and rebuild:
-```bash
-rm -rf .testmondata
-pytest --testmon
-```
-
-### Flake8 --diff not working locally
-
-**Problem**: `git diff | flake8 --diff` shows no output
-
-**Solution**: Ensure you have uncommitted changes:
-```bash
-# Check diff
-git diff
-
-# If empty, make changes or use:
-git diff HEAD~1 | flake8 --diff
-```
-
-### PR workflow not posting comments
-
-**Problem**: No comment appears on PR
-
-**Check**:
-1. Workflow has `pull-requests: write` permission
-2. GitHub token has correct scopes
-3. Check workflow logs for errors
-
-## 📚 Further Reading
-
-- [pytest-testmon documentation](https://testmon.org/)
-- [diff-cover documentation](https://github.com/Bachmann1234/diff_cover)
-- [flake8 documentation](https://flake8.pycqa.org/)
-- [GitHub Actions documentation](https://docs.github.com/en/actions)
-
-## 🤝 Contributing
-
-This is a demo repository, but feel free to:
-- Open issues for questions
-- Submit PRs with improvements
-- Fork and adapt for your projects
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-Built with excellent tools from the Python community:
-- pytest team
-- flake8 maintainers
-- diff-cover contributors
-- GitHub Actions team
-
----
-
-**Questions?** Open an issue or check the workflows for inline comments explaining each step.
+MIT License - see [LICENSE](LICENSE).

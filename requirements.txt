@@ -1,17 +1,7 @@
-# Core testing framework
 pytest>=7.0.0
-
-# For collecting test coverage data
 pytest-cov>=4.0.0
-
-# For intelligently selecting only affected tests
 pytest-testmon>=2.0.0
-
-# For running tests in parallel
 pytest-xdist>=3.0.0
-
-# For linting
+ruff>=0.4.0
 flake8>=6.0.0
-
-# For generating diff-aware coverage reports
 diff-cover>=7.0.0
