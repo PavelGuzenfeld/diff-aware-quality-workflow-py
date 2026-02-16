@@ -441,6 +441,105 @@ fi
 echo ""
 
 # =============================================================================
+echo "=== 7. End-to-end: package naming (include/<pkg>/) ==="
+# =============================================================================
+
+if [ -x "$NAMING_SCRIPT" ] || [ -f "$NAMING_SCRIPT" ]; then
+    # Reuse temp dir from section 6 (trap already set)
+    cd "$TMPDIR"
+    git checkout -q main
+
+    git checkout -q -b feature/package-naming
+
+    # Good package names (snake_case)
+    mkdir -p include/my_package
+    echo "ok" > include/my_package/header.hpp
+    mkdir -p include/nav_utils
+    echo "ok" > include/nav_utils/types.hpp
+    mkdir -p include/flight_controller
+    echo "ok" > include/flight_controller/controller.hpp
+
+    # Bad package names
+    mkdir -p include/MyPackage
+    echo "bad" > include/MyPackage/header.hpp
+    mkdir -p include/flightController
+    echo "bad" > include/flightController/header.hpp
+    mkdir -p "include/Bad-Name"
+    echo "bad" > "include/Bad-Name/header.hpp"
+
+    git add -A
+    git commit -q -m "package naming test files"
+
+    EXIT_CODE_PKG=0
+    OUTPUT_PKG=$(bash "$NAMING_SCRIPT" main 2>&1) || EXIT_CODE_PKG=$?
+
+    # Should find violations
+    if [ $EXIT_CODE_PKG -ne 0 ]; then
+        pass "script exits non-zero on package naming violations"
+    else
+        fail "script should exit non-zero on package naming violations"
+    fi
+
+    # Should catch PascalCase package
+    if echo "$OUTPUT_PKG" | grep -q "MyPackage"; then
+        pass "detects MyPackage/ violation (PascalCase)"
+    else
+        fail "missed MyPackage/ violation"
+    fi
+
+    # Should catch camelCase package
+    if echo "$OUTPUT_PKG" | grep -q "flightController"; then
+        pass "detects flightController/ violation (camelCase)"
+    else
+        fail "missed flightController/ violation"
+    fi
+
+    # Should catch kebab-case package
+    if echo "$OUTPUT_PKG" | grep -q "Bad-Name"; then
+        pass "detects Bad-Name/ violation (kebab-case)"
+    else
+        fail "missed Bad-Name/ violation"
+    fi
+
+    # Should NOT flag good package names
+    if echo "$OUTPUT_PKG" | grep -q "my_package"; then
+        fail "false positive on my_package/"
+    else
+        pass "my_package/ passes"
+    fi
+
+    if echo "$OUTPUT_PKG" | grep -q "nav_utils"; then
+        fail "false positive on nav_utils/"
+    else
+        pass "nav_utils/ passes"
+    fi
+
+    # Test clean package names only
+    git checkout -q main
+    git checkout -q -b feature/clean-packages
+
+    mkdir -p include/good_pkg
+    echo "ok" > include/good_pkg/api.hpp
+    mkdir -p include/another_pkg
+    echo "ok" > include/another_pkg/types.hpp
+    git add -A
+    git commit -q -m "clean package names"
+
+    EXIT_CODE_PKG2=0
+    OUTPUT_PKG2=$(bash "$NAMING_SCRIPT" main 2>&1) || EXIT_CODE_PKG2=$?
+
+    if [ $EXIT_CODE_PKG2 -eq 0 ]; then
+        pass "script exits 0 when all package names pass"
+    else
+        fail "script should exit 0 when all package names pass"
+    fi
+else
+    echo "  SKIP: diff-file-naming.sh not found at $NAMING_SCRIPT"
+fi
+
+echo ""
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo "========================================"

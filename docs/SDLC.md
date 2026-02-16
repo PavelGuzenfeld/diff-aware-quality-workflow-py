@@ -140,6 +140,7 @@ Workflow: [`python-quality.yml`](../.github/workflows/python-quality.yml)
 | Check | What it enforces | Default |
 |-------|-----------------|---------|
 | File naming | `snake_case` for all file/directory names | Opt-in |
+| Package naming | `include/<package_name>/` directories must be `snake_case` | Opt-in (via file naming) |
 | Identifier naming | `snake_case` functions, `PascalCase` types (via clang-tidy) | Via config |
 
 Built-in file naming exceptions: `CMakeLists.txt`, `Dockerfile`, `README.md`, `LICENSE`, dotfiles, `__init__.py`, `requirements*.txt`.

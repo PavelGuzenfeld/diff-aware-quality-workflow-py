@@ -306,6 +306,14 @@ Gems
 Code
 ```
 
+### C++ Package Naming (`include/<package_name>/`)
+
+C++ packages must follow the `include/<package_name>/` convention where `<package_name>` is snake_case.
+The file naming check (`enable_file_naming: true`) enforces this automatically — all path segments are validated.
+
+Valid: `include/nav_utils/`, `include/flight_controller/`
+Invalid: `include/NavUtils/`, `include/flightController/`
+
 ### Custom Semgrep Rules
 
 Pass additional rule sets:

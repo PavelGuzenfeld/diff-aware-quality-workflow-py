@@ -9,7 +9,7 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 - **Python quality** — ruff/flake8 + pytest + diff-cover on changed lines
 - **Security scanning** — Semgrep, CodeQL, Infer, pip-audit
 - **Banned patterns** — cout/printf, raw new/delete, gtest (all opt-in)
-- **Naming enforcement** — snake_case files, identifier naming via clang-tidy
+- **Naming enforcement** — snake_case files and `include/<package_name>/` directories, identifier naming via clang-tidy
 - **Hardening templates** — sanitizer presets, multi-compiler CI, fuzzing, production flags
 - **PR feedback** — inline annotations + auto-updating summary comments
 
