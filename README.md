@@ -42,6 +42,8 @@ jobs:
 | `cppcheck_std` | `c++23` | C++ standard for cppcheck |
 | `runner` | `ubuntu-latest` | Runner label |
 | `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
+| `enforce_doctest` | `false` | Require doctest instead of gtest in test files |
+| `test_file_pattern` | `test` | Grep pattern to identify test files (matched against path) |
 
 ### Python Quality (reusable workflow)
 
@@ -50,7 +52,7 @@ jobs:
   python:
     uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/python-quality.yml@main
     with:
-      python_version: '3.10'
+      python_version: '3.12'
       python_linter: ruff
     permissions:
       contents: read
@@ -61,7 +63,7 @@ jobs:
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `python_version` | `3.10` | Python version to use |
+| `python_version` | `3.12` | Python version to use |
 | `target_python` | `py38` | Target Python version for ruff |
 | `python_linter` | `ruff` | Linter backend: `ruff` (fast, modern) or `flake8` (ROS2/ament compat) |
 | `source_dirs` | `src` | Source directories |
