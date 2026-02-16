@@ -85,9 +85,6 @@ jobs:
       - name: Run tests and collect coverage
         run: |
           pytest ${{ inputs.test_dirs }} \
-            --testmon --cov --cov-report=xml --verbose \
-            -n auto 2>/dev/null || \
-          pytest ${{ inputs.test_dirs }} \
             --cov --cov-report=xml --verbose
 
       - name: Generate diff coverage report
