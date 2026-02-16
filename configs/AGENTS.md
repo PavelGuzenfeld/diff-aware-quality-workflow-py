@@ -201,3 +201,40 @@ Checks: >-
   ...,
   -modernize-use-trailing-return-type
 ```
+
+## CI Workflows
+
+Every project integrating this standard must have a quality workflow in `.github/workflows/`.
+
+### Required Workflows
+
+- **C++**: `cpp-quality.yml` calling the reusable workflow
+  - Required inputs: `docker_image`, `compile_commands_path`
+  - Always enabled: clang-tidy, cppcheck
+  - Opt-in: clang-format, file naming, banned patterns, identifier naming
+- **Python**: `python-quality.yml` + `sast-python.yml`
+  - Linting (ruff/flake8), pytest + diff-cover, Semgrep, pip-audit
+
+### Optional Workflows
+
+- `ci-codeql.yml` — GitHub CodeQL analysis
+- `ci-infer.yml` — Facebook Infer static analysis (C++)
+- `ci-fuzz.yml` — libFuzzer continuous fuzzing
+- `ci-multi-compiler.yml` — GCC + Clang multi-compiler builds
+
+### Verification
+
+Confirm `.github/workflows/` contains the quality workflow for your language(s).
+
+Full setup instructions: see `INTEGRATION.md`.
+
+## SDLC Process
+
+The standard supports a 4-phase Software Development Lifecycle:
+
+- **Phase 1: Developer workstation** — pre-commit hooks, local diff-aware scripts, sanitizer CMake presets, editor integration
+- **Phase 2: PR quality gate** — diff-aware linting, naming checks, banned pattern detection via CI workflows
+- **Phase 3: SAST** — Semgrep (Python), CodeQL (C++/Python), Infer (C++), pip-audit (Python)
+- **Phase 4: Hardening** — sanitizer builds in CI, fuzzing harnesses, multi-compiler testing
+
+Full documentation: see `SDLC.md`.
