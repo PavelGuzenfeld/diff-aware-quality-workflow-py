@@ -162,7 +162,7 @@ jobs:
           echo -e "$RESULTS" > /tmp/clang_tidy_output.txt
 
           if [ "$ERRORS" -gt 0 ]; then
-            echo "clang-tidy found $ERRORS error(s)."
+            echo "clang-tidy: $ERRORS error(s) found."
             exit 1
           fi
 
@@ -252,7 +252,7 @@ jobs:
           echo "errors=$ERRORS" >> $GITHUB_OUTPUT
 
           if [ "$ERRORS" -gt 0 ]; then
-            echo "cppcheck found $ERRORS error(s)."
+            echo "cppcheck: $ERRORS error(s) found."
             exit 1
           fi
 
@@ -315,7 +315,7 @@ jobs:
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
 
           if [ "$VIOLATIONS" -gt 0 ]; then
-            echo "clang-format found $VIOLATIONS file(s) with formatting violations."
+            echo "clang-format: $VIOLATIONS file(s) with violations."
             exit 1
           fi
 
@@ -329,7 +329,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check changed test files for gtest usage
+      - name: Check changed test files for banned frameworks
         id: check
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
@@ -388,11 +388,11 @@ jobs:
 
           if [ "$VIOLATIONS" -gt 0 ]; then
             echo ""
-            echo "Found $VIOLATIONS banned framework usage(s). Use doctest (TEST_CASE/CHECK/REQUIRE) and nanobench."
+            echo "doctest-enforce: $VIOLATIONS violation(s) found. Use doctest (TEST_CASE/CHECK/REQUIRE) and nanobench."
             exit 1
           fi
 
-          echo "All changed test files use approved frameworks."
+          echo "doctest-enforce: all changed test files use approved frameworks."
 
   file-naming:
     name: file naming
@@ -523,11 +523,11 @@ jobs:
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
 
           if [ "$VIOLATIONS" -gt 0 ]; then
-              echo "File naming check: $VIOLATIONS violation(s) found."
+              echo "file-naming: $VIOLATIONS violation(s) found."
               exit 1
           fi
 
-          echo "All changed files follow snake_case naming convention."
+          echo "file-naming: all changed files follow snake_case convention."
 
   cout-ban:
     name: cout/printf ban
@@ -545,7 +545,7 @@ jobs:
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
           FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
             | grep -E "$EXT_PATTERN" \
-            | grep -vE "${{ inputs.test_file_pattern }}" || true)
+            | grep -viE "${{ inputs.test_file_pattern }}" || true)
 
           if [ -z "$FILES" ]; then
             echo "No non-test C++ files changed — skipping cout ban check."
@@ -578,11 +578,11 @@ jobs:
 
           if [ "$VIOLATIONS" -gt 0 ]; then
             echo ""
-            echo "Found $VIOLATIONS banned I/O call(s). Use a structured logger instead of cout/printf."
+            echo "cout-ban: $VIOLATIONS violation(s) found. Use a structured logger instead of cout/printf."
             exit 1
           fi
 
-          echo "No banned I/O calls found."
+          echo "cout-ban: no violations found."
 
   new-delete-ban:
     name: new/delete ban
@@ -600,7 +600,7 @@ jobs:
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
           FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
             | grep -E "$EXT_PATTERN" \
-            | grep -vE "${{ inputs.test_file_pattern }}" || true)
+            | grep -viE "${{ inputs.test_file_pattern }}" || true)
 
           if [ -z "$FILES" ]; then
             echo "No non-test C++ files changed — skipping new/delete ban check."
@@ -639,11 +639,11 @@ jobs:
 
           if [ "$VIOLATIONS" -gt 0 ]; then
             echo ""
-            echo "Found $VIOLATIONS raw new/delete usage(s). Use std::make_unique or std::make_shared instead."
+            echo "new-delete-ban: $VIOLATIONS violation(s) found. Use std::make_unique or std::make_shared instead."
             exit 1
           fi
 
-          echo "No raw new/delete found."
+          echo "new-delete-ban: no violations found."
 
   summary:
     name: Post Summary
@@ -672,7 +672,7 @@ jobs:
               body += `| clang-format | ${format === 'success' ? 'clean' : 'formatting issues'} |\n`;
             }
             if (doctest && doctest !== 'skipped') {
-              body += `| doctest enforcement | ${doctest === 'success' ? 'clean' : 'gtest usage found'} |\n`;
+              body += `| doctest enforcement | ${doctest === 'success' ? 'clean' : 'banned framework found'} |\n`;
             }
             if (naming && naming !== 'skipped') {
               body += `| file naming | ${naming === 'success' ? 'clean' : 'naming violations'} |\n`;
