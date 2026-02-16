@@ -1,0 +1,8 @@
+unusedFunction
+syntaxError
+shadowFunction
+shadowVariable
+passedByValue
+unusedPrivateFunction
+constVariable
+unreadVariable
