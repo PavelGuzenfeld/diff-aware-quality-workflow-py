@@ -39,6 +39,14 @@ on:
         type: string
         default: 'cpp hpp h cc cxx'
         description: 'Space-separated C++ file extensions to check'
+      enforce_doctest:
+        type: boolean
+        default: false
+        description: 'Require doctest instead of gtest in test files'
+      test_file_pattern:
+        type: string
+        default: 'test'
+        description: 'Grep pattern to identify test files (matched against path)'
 
 permissions:
   contents: read
@@ -192,10 +200,67 @@ jobs:
             exit 1
           fi
 
+  doctest-enforce:
+    name: doctest enforcement
+    runs-on: ${{ inputs.runner }}
+    if: inputs.enforce_doctest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed test files for gtest usage
+        id: check
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
+            | grep -E "$EXT_PATTERN" \
+            | grep -iE "${{ inputs.test_file_pattern }}" || true)
+
+          if [ -z "$FILES" ]; then
+            echo "No test files changed — skipping doctest check."
+            echo "violations=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Scanning $(echo "$FILES" | wc -l) changed test file(s) for gtest usage..."
+
+          # Patterns that indicate gtest instead of doctest
+          GTEST_PATTERNS='TEST\(|TEST_F\(|TEST_P\(|TYPED_TEST\(|EXPECT_EQ\(|EXPECT_NE\(|EXPECT_TRUE\(|EXPECT_FALSE\(|EXPECT_STREQ\(|EXPECT_THROW\(|EXPECT_NO_THROW\(|EXPECT_NEAR\(|EXPECT_LT\(|EXPECT_LE\(|EXPECT_GT\(|EXPECT_GE\(|EXPECT_THAT\(|ASSERT_EQ\(|ASSERT_NE\(|ASSERT_TRUE\(|ASSERT_FALSE\(|ASSERT_STREQ\(|ASSERT_THROW\(|ASSERT_NO_THROW\(|ASSERT_NEAR\(|ASSERT_LT\(|ASSERT_LE\(|ASSERT_GT\(|ASSERT_GE\(|ASSERT_THAT\(|ASSERT_DEATH\(|#include\s*[<"]gtest/|#include\s*[<"]gmock/'
+
+          VIOLATIONS=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            MATCHES=$(grep -nE "$GTEST_PATTERNS" "$file" || true)
+            if [ -n "$MATCHES" ]; then
+              echo ""
+              echo "--- $file ---"
+              echo "$MATCHES"
+              # Emit annotations
+              echo "$MATCHES" | while IFS= read -r match; do
+                line_num=$(echo "$match" | cut -d: -f1)
+                content=$(echo "$match" | cut -d: -f2-)
+                echo "::error file=${file},line=${line_num}::Use doctest instead of gtest: ${content}"
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$MATCHES" | wc -l)))
+            fi
+          done <<< "$FILES"
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo ""
+            echo "Found $VIOLATIONS gtest usage(s). Use doctest: TEST_CASE(), CHECK(), REQUIRE(), SUBCASE()."
+            exit 1
+          fi
+
+          echo "All changed test files use doctest."
+
   summary:
     name: Post Summary
     runs-on: ${{ inputs.runner }}
-    needs: [clang-tidy, cppcheck]
+    needs: [clang-tidy, cppcheck, doctest-enforce]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -205,11 +270,15 @@ jobs:
             const marker = '<!-- cpp-quality-report -->';
             const tidy = '${{ needs.clang-tidy.result }}';
             const check = '${{ needs.cppcheck.result }}';
+            const doctest = '${{ needs.doctest-enforce.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
             body += '| Tool | Status |\n|------|--------|\n';
             body += `| clang-tidy | ${tidy === 'success' || tidy === 'skipped' ? 'clean' : 'issues found'} |\n`;
             body += `| cppcheck | ${check === 'success' || check === 'skipped' ? 'clean' : 'issues found'} |\n`;
+            if (doctest && doctest !== 'skipped') {
+              body += `| doctest enforcement | ${doctest === 'success' ? 'clean' : 'gtest usage found'} |\n`;
+            }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
             const { data: comments } = await github.rest.issues.listComments({
