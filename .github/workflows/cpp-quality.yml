@@ -79,6 +79,10 @@ on:
         type: boolean
         default: false
         description: 'Ban std::cout/cerr/clog and printf family in non-test source files (opt-in)'
+      ban_new:
+        type: boolean
+        default: false
+        description: 'Ban raw new/delete in non-test source files (opt-in)'
 
 permissions:
   contents: read
@@ -580,10 +584,71 @@ jobs:
 
           echo "No banned I/O calls found."
 
+  new-delete-ban:
+    name: new/delete ban
+    runs-on: ${{ inputs.runner }}
+    if: inputs.ban_new
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed source files for raw new/delete
+        id: check
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
+            | grep -E "$EXT_PATTERN" \
+            | grep -vE "${{ inputs.test_file_pattern }}" || true)
+
+          if [ -z "$FILES" ]; then
+            echo "No non-test C++ files changed — skipping new/delete ban check."
+            echo "violations=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Scanning $(echo "$FILES" | wc -l) changed source file(s) for raw new/delete..."
+
+          # Match raw new/delete but not make_unique/make_shared/placement new/operator new
+          NEW_PATTERN='\bnew\s+[A-Z_a-z]'
+          DELETE_PATTERN='\bdelete\s'
+
+          VIOLATIONS=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+
+            # Filter out lines with make_unique, make_shared, operator new/delete, placement new
+            MATCHES=$(grep -nE "$NEW_PATTERN|$DELETE_PATTERN" "$file" \
+              | grep -vE 'make_unique|make_shared|make_obj|operator\s+(new|delete)|placement|#\s*include' || true)
+
+            if [ -n "$MATCHES" ]; then
+              echo ""
+              echo "--- $file ---"
+              echo "$MATCHES"
+              echo "$MATCHES" | while IFS= read -r match; do
+                line_num=$(echo "$match" | cut -d: -f1)
+                content=$(echo "$match" | cut -d: -f2-)
+                echo "::error file=${file},line=${line_num}::Raw new/delete found (use std::make_unique/make_shared): ${content}"
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$MATCHES" | wc -l)))
+            fi
+          done <<< "$FILES"
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo ""
+            echo "Found $VIOLATIONS raw new/delete usage(s). Use std::make_unique or std::make_shared instead."
+            exit 1
+          fi
+
+          echo "No raw new/delete found."
+
   summary:
     name: Post Summary
     runs-on: ${{ inputs.runner }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -597,6 +662,7 @@ jobs:
             const doctest = '${{ needs.doctest-enforce.result }}';
             const naming = '${{ needs.file-naming.result }}';
             const coutBan = '${{ needs.cout-ban.result }}';
+            const newBan = '${{ needs.new-delete-ban.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
             body += '| Tool | Status |\n|------|--------|\n';
@@ -613,6 +679,9 @@ jobs:
             }
             if (coutBan && coutBan !== 'skipped') {
               body += `| cout/printf ban | ${coutBan === 'success' ? 'clean' : 'banned I/O found'} |\n`;
+            }
+            if (newBan && newBan !== 'skipped') {
+              body += `| new/delete ban | ${newBan === 'success' ? 'clean' : 'raw new/delete found'} |\n`;
             }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
