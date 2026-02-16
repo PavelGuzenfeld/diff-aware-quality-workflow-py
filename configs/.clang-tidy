@@ -22,4 +22,6 @@ HeaderFilterRegex: ''
 CheckOptions:
   readability-magic-numbers.IgnoredFloatingPointValues: 'ALL'
   readability-magic-numbers.IgnoredIntegerValues: 'ALL'
+  readability-qualified-auto.AddConstToQualified: 'true'
+  modernize-use-nodiscard.ReplacementString: '[[nodiscard]]'
 FormatStyle: none
