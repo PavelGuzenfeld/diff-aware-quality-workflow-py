@@ -60,6 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ matrix.compiler }}-${{ matrix.build_type }}
+
       - name: Install compilers
         run: |
           sudo apt-get update -qq
@@ -67,7 +72,7 @@ jobs:
             ${{ matrix.cc }} ${{ matrix.cxx == 'g++-13' && 'g++-13' || 'libc++-21-dev libc++abi-21-dev' }}
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} --parallel $(nproc)

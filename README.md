@@ -52,6 +52,7 @@ jobs:
 | `file_naming_exceptions` | `''` | Path to file with additional naming exception regexes (one per line) |
 | `file_naming_allowed_prefixes` | `_` | Space-separated allowed prefixes for file/dir names |
 | `ban_cout` | `false` | Ban `std::cout`/`cerr`/`clog` and `printf` family in non-test source files (opt-in) |
+| `ban_new` | `false` | Ban raw `new`/`delete` in non-test source files (opt-in) |
 
 ### Python Quality (reusable workflow)
 
@@ -141,8 +142,9 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 5. Check for gtest/Google Benchmark usage in test files (if doctest enforcement enabled)
 6. Check file/directory naming conventions (if file naming enabled)
 7. Check for banned `std::cout`/`printf` in non-test files (if `ban_cout` enabled)
-8. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
-9. Post summary comment
+8. Check for raw `new`/`delete` in non-test files (if `ban_new` enabled)
+9. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
+10. Post summary comment
 
 ### Python Pipeline
 
@@ -163,9 +165,11 @@ The `configs/` directory contains default configs suitable for most C++ projects
 - `configs/naming-exceptions.txt` — template for file naming exception patterns (one regex per line)
 - `configs/repo-structure-ros2.txt` — sample ROS2 package structure config for `check-repo-structure.sh`
 - `configs/.pre-commit-config.yaml` — pre-commit template with clang-format, clang-tidy, cppcheck hooks
-- `configs/CMakePresets-sanitizers.json` — CMake presets for ASan/UBSan, Debug, and Release builds
-- `configs/ci-multi-compiler.yml` — GitHub Actions multi-compiler CI template (GCC-13 + Clang-21 x Debug/Release)
-- `configs/test-checklist.md` — mandatory test edge case checklist
+- `configs/CMakePresets-sanitizers.json` — CMake presets: `debug-asan`, `release-asan`, `debug-tsan`, `release-hardened`, `debug`, `release`
+- `configs/ci-multi-compiler.yml` — GitHub Actions multi-compiler CI template (GCC-13 + Clang-21) with ccache
+- `configs/ci-fuzz.yml` — libFuzzer CI template with corpus caching and crash artifact upload
+- `configs/cmake-warnings.cmake` — CMake module with recommended GCC/Clang warning flags (`-Wall -Wextra -Wpedantic -Werror` + extras)
+- `configs/test-checklist.md` — mandatory test edge case checklist (ASan, TSan, fuzzing)
 
 Copy these into your repo and customize as needed.
 
@@ -201,6 +205,54 @@ When `enable_file_naming` is enabled, the workflow checks that all changed file 
 **Allowed prefixes** (`file_naming_allowed_prefixes`): For mixed C++/Python projects, leading prefixes like `_` are allowed. For example, with prefix `_`, the name `_bindings.so` is valid because `bindings` passes the snake_case check.
 
 **Custom exceptions** (`file_naming_exceptions`): Point to a file with one regex per line. Lines starting with `#` and blank lines are ignored. Each regex is matched against path segments (directory names or filenames).
+
+### CMake Presets
+
+The `configs/CMakePresets-sanitizers.json` provides presets for different build configurations. Copy to your project root as `CMakePresets.json`.
+
+| Preset | Type | Description |
+|--------|------|-------------|
+| `debug-asan` | Debug | AddressSanitizer + UndefinedBehaviorSanitizer |
+| `release-asan` | Release | ASan/UBSan at optimization level — catches UB the optimizer exploits |
+| `debug-tsan` | Debug | ThreadSanitizer (mutually exclusive with ASan) |
+| `release-hardened` | Release | Production hardening: `_FORTIFY_SOURCE=3`, `_GLIBCXX_ASSERTIONS`, stack protector, CFI |
+| `debug` | Debug | Plain debug build |
+| `release` | Release | Plain optimised build |
+
+```bash
+cmake --preset debug-asan && cmake --build --preset debug-asan
+ctest --test-dir build-asan --output-on-failure
+```
+
+### Compiler Warning Flags
+
+The `configs/cmake-warnings.cmake` module creates an `INTERFACE` library target with recommended warning flags:
+
+```cmake
+include(configs/cmake-warnings.cmake)
+target_link_libraries(my_target PRIVATE warnings)
+```
+
+Flags: `-Wall -Wextra -Wpedantic -Werror -Wshadow -Wnon-virtual-dtor -Wold-style-cast -Wconversion -Wsign-conversion -Wformat=2` plus GCC-specific extras (`-Wduplicated-cond`, `-Wlogical-op`, etc.).
+
+### Fuzzing CI Template
+
+The `configs/ci-fuzz.yml` provides a GitHub Actions template for libFuzzer-based fuzz testing:
+
+- Matrix over fuzz targets
+- ASan + UBSan enabled during fuzzing
+- Corpus caching between runs
+- Crash artifact upload on failure
+- Weekly scheduled runs + PR triggers
+
+Requires fuzz harnesses with the standard libFuzzer entry point:
+
+```cpp
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    my_parser(data, size);
+    return 0;
+}
+```
 
 ## Scripts
 
@@ -250,8 +302,10 @@ configs/
   naming-exceptions.txt Template for file naming exception patterns
   repo-structure-ros2.txt  Sample ROS2 package structure config
   .pre-commit-config.yaml  Pre-commit hooks template (clang-format, clang-tidy, cppcheck)
-  CMakePresets-sanitizers.json  CMake presets (debug-asan, debug, release)
-  ci-multi-compiler.yml Multi-compiler CI template (GCC-13 + Clang-21)
+  CMakePresets-sanitizers.json  CMake presets (debug-asan, release-asan, debug-tsan, release-hardened, debug, release)
+  ci-multi-compiler.yml Multi-compiler CI template (GCC-13 + Clang-21) with ccache
+  ci-fuzz.yml           libFuzzer CI template with corpus caching
+  cmake-warnings.cmake  CMake warning flags module (GCC/Clang)
   test-checklist.md     Mandatory test edge case checklist
 src/calculator.py       Python demo module
 tests/test_calculator.py  Python demo tests
