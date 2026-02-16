@@ -390,7 +390,7 @@ requirements.txt        Python dependencies
 
 This repo includes a Python calculator module (`src/calculator.py`) with tests to demonstrate the Python quality workflow. The `self-test.yml` workflow calls `python-quality.yml` on every push/PR to prove the template works.
 
-The demo includes an intentional legacy lint issue (`unused_variable` in `subtract()`) that is suppressed via `per-file-ignores` in `pyproject.toml` — showing how diff-aware checking tolerates existing debt while enforcing standards on new code.
+The demo code passes all linting checks (ruff) and is used by the `gatekeeper-checks.yml` workflow to verify the repo stays clean on every push.
 
 ### Run locally
 
