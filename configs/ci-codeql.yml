@@ -1,0 +1,61 @@
+# CodeQL CI template.
+# Copy into .github/workflows/ and adjust build commands.
+#
+# Provides deep inter-procedural taint tracking and data flow analysis.
+# Free for public repositories. Private repos require GitHub Advanced Security license.
+#
+# C++ coverage: 200+ CWEs (buffer overflow, use-after-free, format string, injection, etc.)
+# Python coverage: 160+ CWEs (SQL injection, XSS, command injection, SSRF, etc.)
+#
+# Results appear in the GitHub Security tab and as PR annotations.
+
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6AM UTC
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: []  # Fill in: [cpp, python], [cpp], or [python]
+        # include:
+        #   - language: cpp
+        #     build-command: cmake -B build && cmake --build build
+        #   - language: python
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended  # 200+ CWEs (vs 168 in default suite)
+
+      # For C++: replace autobuild with your build command if needed.
+      # CodeQL must intercept the compilation to build its database.
+      - name: Autobuild
+        if: matrix.build-command == ''
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Custom build
+        if: matrix.build-command != ''
+        run: ${{ matrix.build-command }}
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: ${{ matrix.language }}

@@ -612,7 +612,7 @@ jobs:
 
           # Match raw new/delete but not make_unique/make_shared/placement new/operator new
           NEW_PATTERN='\bnew\s+[A-Z_a-z]'
-          DELETE_PATTERN='\bdelete\s'
+          DELETE_PATTERN='\bdelete(\s|\[)'
 
           VIOLATIONS=0
           while IFS= read -r file; do
