@@ -1,0 +1,37 @@
+# Pre-commit configuration template for C++ projects.
+# Copy to your repo root as .pre-commit-config.yaml and customize.
+#
+# Install:  pip install pre-commit && pre-commit install
+# Run all:  pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.0
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+
+  - repo: local
+    hooks:
+      - id: clang-tidy
+        name: clang-tidy
+        entry: clang-tidy --warnings-as-errors=*
+        language: system
+        types_or: [c, c++]
+        # Requires compile_commands.json — adjust -p path as needed:
+        # entry: clang-tidy -p build --warnings-as-errors=*
+
+      - id: cppcheck
+        name: cppcheck
+        entry: cppcheck --enable=warning,style,performance,portability --inline-suppr --error-exitcode=1
+        language: system
+        types_or: [c, c++]
