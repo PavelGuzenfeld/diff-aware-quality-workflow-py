@@ -1,0 +1,19 @@
+name: Self Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-quality:
+    uses: ./.github/workflows/python-quality.yml
+    with:
+      python_version: '3.10'
+      python_linter: 'ruff'
+      source_dirs: 'src'
+      test_dirs: 'tests'
+    permissions:
+      contents: read
+      pull-requests: write

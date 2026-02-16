@@ -29,7 +29,7 @@ def subtract(a, b):
     """
     # This unused variable simulates legacy technical debt
     # Ignored via per-file-ignores in .flake8
-    unused_variable = 123  # noqa: F841
+    unused_variable = 123
     return a - b
 
 
