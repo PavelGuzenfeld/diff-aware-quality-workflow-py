@@ -51,6 +51,7 @@ jobs:
 | `enable_file_naming` | `false` | Enable file/directory naming convention check (snake_case, opt-in) |
 | `file_naming_exceptions` | `''` | Path to file with additional naming exception regexes (one per line) |
 | `file_naming_allowed_prefixes` | `_` | Space-separated allowed prefixes for file/dir names |
+| `ban_cout` | `false` | Ban `std::cout`/`cerr`/`clog` and `printf` family in non-test source files (opt-in) |
 
 ### Python Quality (reusable workflow)
 
@@ -137,10 +138,11 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 2. Run clang-tidy on each file inside the caller's Docker image
 3. Run cppcheck on changed files inside Docker
 4. Run clang-format on changed files (if enabled)
-5. Check for gtest usage in test files (if doctest enforcement enabled)
+5. Check for gtest/Google Benchmark usage in test files (if doctest enforcement enabled)
 6. Check file/directory naming conventions (if file naming enabled)
-7. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
-8. Post summary comment
+7. Check for banned `std::cout`/`printf` in non-test files (if `ban_cout` enabled)
+8. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
+9. Post summary comment
 
 ### Python Pipeline
 
@@ -160,6 +162,10 @@ The `configs/` directory contains default configs suitable for most C++ projects
 - `configs/.clang-tidy-naming` — `readability-identifier-naming` CheckOptions (snake_case functions, PascalCase types, trailing `_` for private members)
 - `configs/naming-exceptions.txt` — template for file naming exception patterns (one regex per line)
 - `configs/repo-structure-ros2.txt` — sample ROS2 package structure config for `check-repo-structure.sh`
+- `configs/.pre-commit-config.yaml` — pre-commit template with clang-format, clang-tidy, cppcheck hooks
+- `configs/CMakePresets-sanitizers.json` — CMake presets for ASan/UBSan, Debug, and Release builds
+- `configs/ci-multi-compiler.yml` — GitHub Actions multi-compiler CI template (GCC-13 + Clang-21 x Debug/Release)
+- `configs/test-checklist.md` — mandatory test edge case checklist
 
 Copy these into your repo and customize as needed.
 
@@ -243,6 +249,10 @@ configs/
   cppcheck.suppress     Default cppcheck suppressions
   naming-exceptions.txt Template for file naming exception patterns
   repo-structure-ros2.txt  Sample ROS2 package structure config
+  .pre-commit-config.yaml  Pre-commit hooks template (clang-format, clang-tidy, cppcheck)
+  CMakePresets-sanitizers.json  CMake presets (debug-asan, debug, release)
+  ci-multi-compiler.yml Multi-compiler CI template (GCC-13 + Clang-21)
+  test-checklist.md     Mandatory test edge case checklist
 src/calculator.py       Python demo module
 tests/test_calculator.py  Python demo tests
 pyproject.toml          Ruff, pytest, coverage config
