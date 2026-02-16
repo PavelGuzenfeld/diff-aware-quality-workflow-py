@@ -2,7 +2,7 @@
 
 Reusable GitHub Actions workflow templates for diff-aware code quality checks. Lint and analyze only the files changed in a PR — no noise from legacy code.
 
-Supports **C++** (clang-tidy, cppcheck) and **Python** (ruff/flake8, diff-cover, pytest).
+Supports **C++** (clang-tidy, cppcheck, clang-format) and **Python** (ruff/flake8, diff-cover, pytest).
 
 ## Usage
 
@@ -39,7 +39,11 @@ jobs:
 | `clang_tidy_config` | `''` | Path to .clang-tidy config (empty = use repo default) |
 | `cppcheck_suppress` | `''` | Path to cppcheck suppressions file |
 | `cppcheck_includes` | `''` | Space-separated include directories |
+| `cppcheck_include_file` | `''` | Path to file containing include dirs (one per line, supports `#` comments) |
 | `cppcheck_std` | `c++23` | C++ standard for cppcheck |
+| `enable_clang_format` | `false` | Enable clang-format check on changed files (opt-in) |
+| `clang_format_config` | `''` | Path to .clang-format config (empty = use repo default) |
+| `source_setup` | `''` | Shell command to source before tools (e.g., `source /opt/ros/humble/install/setup.bash`) |
 | `runner` | `ubuntu-latest` | Runner label |
 | `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
 | `enforce_doctest` | `false` | Require doctest instead of gtest in test files |
@@ -90,10 +94,29 @@ jobs:
       compile_commands_path: build/rocx_mission_control
       source_dirs: rocx/rocx_mission_control
       cppcheck_suppress: cppcheck.suppress
-      cppcheck_includes: '/opt/ros/humble/include rocx/rocx_mission_control/include'
+      cppcheck_include_file: cppcheck.include
+      source_setup: 'source /opt/ros/humble/install/setup.bash'
+      enable_clang_format: true
+      enforce_doctest: true
       runner: self-hosted
     secrets: inherit
 ```
+
+### cppcheck.include file format
+
+Create a `cppcheck.include` file in your repo with one include directory per line:
+
+```
+# ROS2 includes
+/opt/ros/humble/include
+/opt/ros/humble/include/rclcpp
+
+# Project includes
+rocx/rocx_mission_control/include
+rocx/rocx_common/include
+```
+
+Lines starting with `#` are treated as comments and blank lines are ignored.
 
 ## How It Works
 
@@ -110,8 +133,10 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 1. Detect changed C++ files
 2. Run clang-tidy on each file inside the caller's Docker image
 3. Run cppcheck on changed files inside Docker
-4. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
-5. Post summary comment
+4. Run clang-format on changed files (if enabled)
+5. Check for gtest usage in test files (if doctest enforcement enabled)
+6. Parse output into GitHub annotations (inline warnings/errors on the PR diff)
+7. Post summary comment
 
 ### Python Pipeline
 
@@ -126,7 +151,8 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 The `configs/` directory contains default configs suitable for most C++ projects:
 
 - `configs/.clang-tidy` — clang-analyzer, cppcoreguidelines, modernize, bugprone, performance, readability checks with sensible exclusions
-- `configs/cppcheck.suppress` — generic suppressions (unusedFunction, shadowVariable, etc.)
+- `configs/.clang-format` — C++23 config: 120-col line limit, 4-space indent, Allman-style braces, right-aligned pointers
+- `configs/cppcheck.suppress` — generic suppressions (unusedFunction, shadowVariable, etc.) with commented vendor examples
 
 Copy these into your repo and customize as needed.
 
@@ -142,6 +168,10 @@ Standalone scripts for running outside GitHub Actions:
 CPPCHECK_SUPPRESS=cppcheck.suppress \
 CPPCHECK_INCLUDES="/opt/ros/humble/include" \
 ./scripts/diff-cppcheck.sh origin/main
+
+# clang-format on changed files
+CLANG_FORMAT_CONFIG=.clang-format \
+./scripts/diff-clang-format.sh origin/main "cpp hpp h"
 ```
 
 ## Project Structure
@@ -156,8 +186,10 @@ CPPCHECK_INCLUDES="/opt/ros/humble/include" \
 scripts/
   diff-clang-tidy.sh    Standalone clang-tidy diff script
   diff-cppcheck.sh      Standalone cppcheck diff script
+  diff-clang-format.sh  Standalone clang-format diff script
 configs/
   .clang-tidy           Default clang-tidy config
+  .clang-format         Default clang-format config (C++23, Allman braces, 120-col)
   cppcheck.suppress     Default cppcheck suppressions
 src/calculator.py       Python demo module
 tests/test_calculator.py  Python demo tests
