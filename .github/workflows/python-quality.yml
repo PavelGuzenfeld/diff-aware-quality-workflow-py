@@ -1,0 +1,164 @@
+name: Python Quality Checks
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        type: string
+        default: '3.10'
+        description: 'Python version to use'
+      target_python:
+        type: string
+        default: 'py38'
+        description: 'Target Python version for ruff (e.g., py38)'
+      python_linter:
+        type: string
+        default: 'ruff'
+        description: 'Linter backend: ruff (default, fast) or flake8 (ROS2/ament compat)'
+      source_dirs:
+        type: string
+        default: 'src'
+        description: 'Space-separated source directories'
+      test_dirs:
+        type: string
+        default: 'tests'
+        description: 'Space-separated test directories'
+      ruff_select:
+        type: string
+        default: 'E,W,F,I'
+        description: 'Ruff rule selection (comma-separated)'
+      fail_under:
+        type: number
+        default: 100
+        description: 'Minimum diff-quality score (0-100)'
+      runner:
+        type: string
+        default: 'ubuntu-latest'
+        description: 'Runner label'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ inputs.python_version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          # Ensure linter and diff-quality are installed
+          if [ "${{ inputs.python_linter }}" = "ruff" ]; then
+            pip install ruff diff-cover
+          else
+            pip install flake8 diff-cover
+          fi
+          pip install pytest pytest-cov pytest-testmon pytest-xdist
+
+      - name: Run diff-aware linting
+        id: lint
+        run: |
+          VIOLATIONS="${{ inputs.python_linter }}"
+          if [ "$VIOLATIONS" = "ruff" ]; then
+            VIOLATIONS="ruff.check"
+          fi
+          diff-quality --violations="$VIOLATIONS" \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=${{ inputs.fail_under }}
+        continue-on-error: true
+
+      - name: Run tests and collect coverage
+        run: |
+          pytest ${{ inputs.test_dirs }} \
+            --testmon --cov --cov-report=xml --verbose \
+            -n auto 2>/dev/null || \
+          pytest ${{ inputs.test_dirs }} \
+            --cov --cov-report=xml --verbose
+
+      - name: Generate diff coverage report
+        id: diff-cover
+        run: |
+          echo "DIFF_COVER_REPORT<<EOF" >> $GITHUB_ENV
+          diff-cover coverage.xml \
+            --compare-branch=origin/${{ github.base_ref }} \
+            --markdown-report=diff-cover.md || true
+          cat diff-cover.md >> $GITHUB_ENV 2>/dev/null || \
+            diff-cover coverage.xml \
+              --compare-branch=origin/${{ github.base_ref }} >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Set lint outcome
+        id: lint-result
+        run: echo "outcome=${{ steps.lint.outcome }}" >> $GITHUB_OUTPUT
+
+    outputs:
+      lint_outcome: ${{ steps.lint.outcome }}
+
+  summary:
+    name: Post Summary
+    runs-on: ${{ inputs.runner }}
+    needs: [lint-and-test]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- python-quality-report -->';
+            const lintResult = '${{ needs.lint-and-test.outputs.lint_outcome }}';
+            const output = process.env.DIFF_COVER_REPORT || '';
+
+            let body = marker + '\n## Python Quality Report\n\n';
+            body += `**Linter**: ${{ inputs.python_linter }}\n`;
+            body += `**Lint status**: ${lintResult === 'success' ? 'clean' : 'issues found in changed lines'}\n\n`;
+
+            if (output) {
+              body += output;
+            }
+
+            body += '\n\n---\n*Only lines changed in this PR were checked.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
+
+      - name: Fail if lint issues found
+        if: needs.lint-and-test.outputs.lint_outcome == 'failure'
+        run: |
+          echo "Linter found issues in changed lines."
+          exit 1
