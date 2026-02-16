@@ -1,0 +1,85 @@
+# Fuzzing CI template.
+# Copy into .github/workflows/ and adjust paths.
+#
+# Requires:
+#   - A fuzz_targets/ directory with libFuzzer harnesses
+#   - Each target links against -fsanitize=fuzzer
+#   - CMake option ENABLE_FUZZING to gate fuzzer builds
+#
+# Example fuzz harness:
+#   extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+#       my_parser(data, size);
+#       return 0;
+#   }
+
+name: Fuzz Testing
+
+on:
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 4 * * 1'  # Weekly Monday 4AM UTC
+
+jobs:
+  fuzz:
+    name: libFuzzer (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: []  # Fill in your fuzz target names, e.g. [parse_input, decode_frame]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-21 libc++-21-dev libc++abi-21-dev
+
+      - name: Configure
+        env:
+          CC: clang-21
+          CXX: clang++-21
+        run: |
+          cmake -S . -B build-fuzz \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_FUZZING=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined,fuzzer-no-link -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined,fuzzer-no-link -fno-omit-frame-pointer"
+
+      - name: Build
+        run: cmake --build build-fuzz --target ${{ matrix.target }} --parallel $(nproc)
+
+      - name: Restore corpus cache
+        uses: actions/cache@v4
+        with:
+          path: corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Create corpus directory
+        run: mkdir -p corpus/${{ matrix.target }}
+
+      - name: Run fuzzer
+        run: |
+          timeout 300 ./build-fuzz/fuzz_targets/${{ matrix.target }} \
+            corpus/${{ matrix.target }} \
+            -max_total_time=300 \
+            -print_final_stats=1 \
+            || FUZZ_EXIT=$?
+
+          if [ "${FUZZ_EXIT:-0}" -eq 77 ]; then
+            echo "Fuzzer found a crash!"
+            exit 1
+          fi
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: |
+            crash-*
+            leak-*
+            timeout-*

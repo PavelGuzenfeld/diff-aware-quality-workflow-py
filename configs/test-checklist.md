@@ -11,4 +11,7 @@ Every test suite must cover these categories. Check off each item before submitt
 - [ ] **Resource exhaustion** — allocation failure, full buffers, timeout
 - [ ] **Concurrent access** — data races, lock ordering, atomic correctness
 - [ ] **Nanobench baselines** — performance-sensitive paths have benchmarks
-- [ ] **Sanitizer pass** — all tests pass under ASan + UBSan (`debug-asan` preset)
+- [ ] **Sanitizer pass (ASan + UBSan)** — all tests pass under `debug-asan` preset
+- [ ] **Sanitizer pass (TSan)** — threaded code passes under `debug-tsan` preset
+- [ ] **Release + sanitizers** — tests pass under `release-asan` (optimizer exploits different UB)
+- [ ] **Fuzz harness** — parsing/input-handling code has a libFuzzer harness
