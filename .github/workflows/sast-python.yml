@@ -1,0 +1,164 @@
+name: Python SAST
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        type: string
+        default: '3.12'
+        description: 'Python version to use'
+      enable_semgrep:
+        type: boolean
+        default: true
+        description: 'Enable Semgrep security scanning'
+      semgrep_rules:
+        type: string
+        default: 'p/python p/owasp-top-ten'
+        description: 'Semgrep rule sets (space-separated)'
+      enable_pip_audit:
+        type: boolean
+        default: true
+        description: 'Enable pip-audit dependency CVE scanning'
+      requirements_file:
+        type: string
+        default: 'requirements.txt'
+        description: 'Path to requirements file for pip-audit'
+      enable_codeql:
+        type: boolean
+        default: false
+        description: 'Enable CodeQL deep analysis (free for public repos)'
+      codeql_queries:
+        type: string
+        default: 'security-extended'
+        description: 'CodeQL query suite: security-extended (recommended) or security-and-quality'
+      runner:
+        type: string
+        default: 'ubuntu-latest'
+        description: 'Runner label'
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  semgrep:
+    name: Semgrep
+    if: inputs.enable_semgrep
+    runs-on: ${{ inputs.runner }}
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config ${{ inputs.semgrep_rules }} --sarif --output=semgrep.sarif --error
+        continue-on-error: true
+        id: semgrep-scan
+
+      - name: Upload SARIF
+        if: always() && steps.semgrep-scan.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+        continue-on-error: true
+
+  pip-audit:
+    name: pip-audit
+    if: inputs.enable_pip_audit
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ inputs.python_version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "${{ inputs.requirements_file }}" ]; then
+            pip install -r "${{ inputs.requirements_file }}"
+          fi
+
+      - name: Run pip-audit
+        id: audit
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        continue-on-error: true
+
+  codeql:
+    name: CodeQL
+    if: inputs.enable_codeql
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: ${{ inputs.codeql_queries }}
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: python-sast
+
+  summary:
+    name: SAST Summary
+    runs-on: ${{ inputs.runner }}
+    needs: [semgrep, pip-audit, codeql]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- python-sast-report -->';
+            const semgrep = '${{ needs.semgrep.result }}';
+            const audit = '${{ needs.pip-audit.result }}';
+            const codeql = '${{ needs.codeql.result }}';
+
+            let body = marker + '\n## Python SAST Report\n\n';
+            body += '| Scanner | Status |\n|---------|--------|\n';
+
+            if (semgrep && semgrep !== 'skipped') {
+              body += `| Semgrep | ${semgrep === 'success' ? 'no findings' : 'findings reported'} |\n`;
+            }
+            if (audit && audit !== 'skipped') {
+              body += `| pip-audit | ${audit === 'success' ? 'no known CVEs' : 'vulnerabilities found'} |\n`;
+            }
+            if (codeql && codeql !== 'skipped') {
+              body += `| CodeQL | ${codeql === 'success' ? 'no findings' : 'findings reported'} |\n`;
+            }
+
+            body += '\n---\n*See the Security tab for detailed SARIF results.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }

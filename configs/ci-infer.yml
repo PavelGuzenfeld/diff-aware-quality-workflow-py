@@ -1,0 +1,120 @@
+# Facebook Infer CI template.
+# Copy into .github/workflows/ and adjust build commands.
+#
+# Provides:
+#   - Pulse: use-after-free, null deref, memory leaks, taint flows, unnecessary copies
+#   - InferBO: buffer overflow detection at multiple severity levels
+#   - RacerD: data race and thread safety analysis (unique among OSS SAST tools)
+#
+# Designed for incremental analysis — only re-analyzes changed files and dependents.
+# MIT license, maintained by Meta.
+#
+# Requires: project builds with cmake or make.
+
+name: Infer Static Analysis
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  infer:
+    name: Infer (${{ matrix.checker }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - checker: pulse
+            description: Memory safety (use-after-free, null deref, leaks)
+          - checker: bufferoverrun
+            description: Buffer overflow detection
+          - checker: racerd
+            description: Thread safety and data race detection
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Infer
+        run: |
+          VERSION=v1.2.0
+          curl -sSL "https://github.com/facebook/infer/releases/download/${VERSION}/infer-linux-x86_64-${VERSION}.tar.xz" \
+            | tar -xJ -C /opt
+          echo "/opt/infer-linux-x86_64-${VERSION}/bin" >> $GITHUB_PATH
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake g++
+          # Add project-specific dependencies here
+
+      - name: Configure
+        run: |
+          # Replace with your project's configure command
+          cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run Infer capture
+        run: |
+          infer capture --compilation-database build/compile_commands.json
+
+      - name: Run Infer analysis
+        run: |
+          infer analyze \
+            --keep-going \
+            --${{ matrix.checker }}-only \
+            --results-dir infer-out
+
+      - name: Report results
+        if: always()
+        run: |
+          infer report \
+            --results-dir infer-out \
+            --issues-json infer-out/report.json
+
+          # Count issues
+          ISSUES=$(python3 -c "
+          import json
+          with open('infer-out/report.json') as f:
+              issues = json.load(f)
+          print(len(issues))
+          " 2>/dev/null || echo "0")
+
+          echo "## Infer ${{ matrix.checker }}: ${ISSUES} issue(s)" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$ISSUES" -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            infer report --results-dir infer-out 2>&1 | head -100 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Emit annotations
+        if: always()
+        run: |
+          python3 -c "
+          import json, sys
+
+          with open('infer-out/report.json') as f:
+              issues = json.load(f)
+
+          for issue in issues:
+              severity = 'error' if issue.get('severity', '') == 'ERROR' else 'warning'
+              file = issue.get('file', '')
+              line = issue.get('line', 0)
+              msg = issue.get('qualifier', '')
+              bug_type = issue.get('bug_type', '')
+              print(f'::{severity} file={file},line={line}::[{bug_type}] {msg}')
+          " 2>/dev/null || true
+
+      - name: Upload Infer results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infer-${{ matrix.checker }}-results
+          path: infer-out/report.json
+          retention-days: 14

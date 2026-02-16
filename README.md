@@ -81,6 +81,38 @@ jobs:
 | `fail_under` | `100` | Minimum diff-quality score (0-100) |
 | `runner` | `ubuntu-latest` | Runner label |
 
+### Python SAST (reusable workflow)
+
+Security scanning for Python projects — Semgrep taint analysis, pip-audit dependency CVE scanning, and optional CodeQL deep analysis.
+
+```yaml
+jobs:
+  sast:
+    uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/sast-python.yml@main
+    with:
+      enable_semgrep: true
+      semgrep_rules: 'p/python p/owasp-top-ten'
+      enable_pip_audit: true
+      enable_codeql: true  # free for public repos
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+```
+
+#### Python SAST Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `python_version` | `3.12` | Python version to use |
+| `enable_semgrep` | `true` | Enable Semgrep security scanning |
+| `semgrep_rules` | `p/python p/owasp-top-ten` | Semgrep rule sets (space-separated) |
+| `enable_pip_audit` | `true` | Enable pip-audit dependency CVE scanning |
+| `requirements_file` | `requirements.txt` | Path to requirements file for pip-audit |
+| `enable_codeql` | `false` | Enable CodeQL deep analysis (free for public repos) |
+| `codeql_queries` | `security-extended` | CodeQL query suite |
+| `runner` | `ubuntu-latest` | Runner label |
+
 ## Full-Featured Example
 
 For C++ projects running on self-hosted runners with Docker (e.g., ROS2 + colcon):
@@ -158,6 +190,14 @@ Each workflow posts a summary comment on the PR with a hidden marker (`<!-- qual
 4. Generate diff-cover report (coverage on changed lines only)
 5. Post summary comment
 
+### Python SAST Pipeline
+
+1. Run Semgrep with configurable rule sets (taint tracking, OWASP Top 10)
+2. Run pip-audit for dependency CVE scanning
+3. Run CodeQL deep analysis (optional, free for public repos)
+4. Upload SARIF results to GitHub Security tab
+5. Post summary comment
+
 ## Default Configs
 
 The `configs/` directory contains default configs suitable for most C++ projects:
@@ -174,6 +214,8 @@ The `configs/` directory contains default configs suitable for most C++ projects
 - `configs/ci-fuzz.yml` — libFuzzer CI template with corpus caching and crash artifact upload
 - `configs/cmake-warnings.cmake` — CMake module with recommended GCC/Clang warning flags (`-Wall -Wextra -Wpedantic -Werror` + extras)
 - `configs/test-checklist.md` — mandatory test edge case checklist (ASan, TSan, fuzzing)
+- `configs/ci-codeql.yml` — CodeQL SAST template for C++ and Python (inter-procedural taint tracking, 200+ CWEs)
+- `configs/ci-infer.yml` — Facebook Infer template (Pulse memory safety, InferBO buffer overflow, RacerD thread safety)
 
 Copy these into your repo and customize as needed.
 
@@ -258,6 +300,28 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 }
 ```
 
+### CodeQL SAST Template
+
+The `configs/ci-codeql.yml` provides deep inter-procedural taint tracking and data flow analysis:
+
+- Supports both C++ and Python (matrix over languages)
+- `security-extended` query suite: 200+ CWEs for C++, 160+ CWEs for Python
+- Detects: buffer overflows, use-after-free, SQL/command injection, format strings, XSS, SSRF
+- Results appear in GitHub Security tab and as PR annotations
+- Free for public repositories (private repos require GitHub Advanced Security license)
+
+### Infer SAST Template
+
+The `configs/ci-infer.yml` provides Facebook/Meta's static analyzer with three checkers:
+
+| Checker | What it finds |
+|---------|---------------|
+| `pulse` | Use-after-free, null deref, memory leaks, taint flows, unnecessary copies |
+| `bufferoverrun` | Buffer overflow at multiple severity levels |
+| `racerd` | Data races, lock ordering, thread safety violations |
+
+RacerD is unique among open-source SAST tools — no other free tool provides comparable thread safety analysis. Particularly valuable for multi-threaded C++ (ROS2 executors, async callbacks).
+
 ## Scripts
 
 Standalone scripts for running outside GitHub Actions:
@@ -289,6 +353,7 @@ NAMING_ALLOWED_PREFIXES="_" \
 .github/workflows/
   cpp-quality.yml       Reusable C++ quality workflow
   python-quality.yml    Reusable Python quality workflow
+  sast-python.yml       Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   self-test.yml         Self-test (calls python-quality on demo code)
   gatekeeper-checks.yml Push checks for this repo
   pull-request-feedback.yml  PR feedback for this repo
@@ -309,10 +374,14 @@ configs/
   CMakePresets-sanitizers.json  CMake presets (debug-asan, release-asan, debug-tsan, release-hardened, debug, release)
   ci-multi-compiler.yml Multi-compiler CI template (GCC-13 + Clang-21) with ccache
   ci-fuzz.yml           libFuzzer CI template with corpus caching
+  ci-codeql.yml         CodeQL SAST template (C++ & Python, 200+ CWEs)
+  ci-infer.yml          Facebook Infer template (Pulse, InferBO, RacerD)
   cmake-warnings.cmake  CMake warning flags module (GCC/Clang)
   test-checklist.md     Mandatory test edge case checklist
+tests/
+  test_calculator.py    Python demo tests
+  test_patterns.sh      Pattern and script validation tests (109 tests)
 src/calculator.py       Python demo module
-tests/test_calculator.py  Python demo tests
 pyproject.toml          Ruff, pytest, coverage config
 requirements.txt        Python dependencies
 ```
