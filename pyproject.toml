@@ -1,5 +1,5 @@
 [project]
-name = "diff-aware-quality-workflow-py"
+name = "standard"
 version = "0.1.0"
 description = "Reusable diff-aware code quality workflows for GitHub Actions (C++ and Python)"
 readme = "README.md"
