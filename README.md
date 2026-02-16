@@ -83,13 +83,13 @@ jobs:
 
 ## Full-Featured Example
 
-For C++ projects running on self-hosted ARM64/x64 runners with Docker:
+For C++ projects running on self-hosted runners with Docker (e.g., ROS2 + colcon):
 
 ```yaml
 name: Quality Checks
 on:
   pull_request:
-    branches: [master, dev_for_orin]
+    branches: [main, master]
 
 jobs:
   cpp:
@@ -97,14 +97,18 @@ jobs:
     with:
       docker_image: ghcr.io/your-org/your-dev-image:latest
       compile_commands_path: build/your_package
-      source_dirs: src/my_package
       cppcheck_suppress: cppcheck.suppress
       cppcheck_include_file: cppcheck.include
       source_setup: 'source /opt/ros/humble/install/setup.bash'
       enable_clang_format: true
       enforce_doctest: true
+      ban_cout: true
+      ban_new: true
+      enable_file_naming: true
       runner: self-hosted
-    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write
 ```
 
 ### cppcheck.include file format
