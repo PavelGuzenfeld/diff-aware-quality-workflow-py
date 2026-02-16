@@ -81,30 +81,34 @@ jobs:
 | `fail_under` | `100` | Minimum diff-quality score (0-100) |
 | `runner` | `ubuntu-latest` | Runner label |
 
-## ROCX Integration Example
+## Full-Featured Example
 
-For ROCX C++ projects running on self-hosted ARM64/x64 runners with Docker:
+For C++ projects running on self-hosted runners with Docker (e.g., ROS2 + colcon):
 
 ```yaml
 name: Quality Checks
 on:
   pull_request:
-    branches: [master, dev_for_orin]
+    branches: [main, master]
 
 jobs:
   cpp:
     uses: PavelGuzenfeld/diff-aware-quality-workflow-py/.github/workflows/cpp-quality.yml@main
     with:
-      docker_image: ghcr.io/thebandofficial/rocx_dev:latest
-      compile_commands_path: build/rocx_mission_control
-      source_dirs: rocx/rocx_mission_control
+      docker_image: ghcr.io/your-org/your-dev-image:latest
+      compile_commands_path: build/your_package
       cppcheck_suppress: cppcheck.suppress
       cppcheck_include_file: cppcheck.include
       source_setup: 'source /opt/ros/humble/install/setup.bash'
       enable_clang_format: true
       enforce_doctest: true
+      ban_cout: true
+      ban_new: true
+      enable_file_naming: true
       runner: self-hosted
-    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write
 ```
 
 ### cppcheck.include file format
@@ -117,8 +121,8 @@ Create a `cppcheck.include` file in your repo with one include directory per lin
 /opt/ros/humble/include/rclcpp
 
 # Project includes
-rocx/rocx_mission_control/include
-rocx/rocx_common/include
+src/my_package/include
+src/my_common/include
 ```
 
 Lines starting with `#` are treated as comments and blank lines are ignored.
