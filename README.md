@@ -58,6 +58,7 @@ jobs:
 |----------|------------|
 | **[SDLC Process](docs/SDLC.md)** | Full lifecycle: pre-commit, PR gates, SAST, testing, hardening |
 | **[Integration Guide](docs/INTEGRATION.md)** | Step-by-step setup for C++ and Python projects |
+| **[Roadmap](docs/ROADMAP.md)** | Planned features: auto Jira tickets from scans, trend dashboard |
 
 ## Reusable Workflows
 
