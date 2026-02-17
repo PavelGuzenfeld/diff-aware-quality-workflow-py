@@ -58,7 +58,7 @@ fmt::print(logfile, "{}\t{}\t{}\n", pts, pre, post);
 
 ### Use `safe_cast` for Numeric Conversions
 
-All narrowing numeric conversions must use `safe_cast<T>()` from `rocx_utils` instead of `static_cast` or implicit conversions. `safe_cast` validates the value fits in the target type at runtime.
+All narrowing numeric conversions must use a checked cast utility (e.g., `safe_cast<T>()`) instead of `static_cast` or implicit conversions. The utility should validate the value fits in the target type at runtime.
 
 ```cpp
 // Bad — silent narrowing
@@ -118,6 +118,114 @@ When a finding is a false positive:
 
 Suppressions are reviewed as part of the PR code review.
 
+## Planned: SBOM & Supply Chain Security
+
+Generate a Software Bill of Materials covering both container and source-level dependencies, with vulnerability scanning.
+
+### Architecture
+
+```
+PR opened / weekly schedule
+       |
+  ┌────┴───────────────────────────────┐
+  │  Layer 1: Container scan (Syft)    │
+  │    → apt packages, pip packages,   │
+  │      system libraries              │
+  │                                    │
+  │  Layer 2: Source scan (custom)     │
+  │    → FetchContent (CMake)          │
+  │    → .gitmodules (recursive)       │
+  │    → package.xml (ROS2)            │
+  │    → pyproject.toml / requirements │
+  └────┬───────────────────────────────┘
+       |
+  Merge SBOMs (CycloneDX)
+       |
+  Grype vulnerability scan
+       |
+  PR comment + artifacts
+```
+
+### Reusable Workflow: `sbom.yml`
+
+10 inputs following existing conventions:
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `docker_image` | *required* | Docker image to scan |
+| `enable_container_scan` | `true` | Syft container image scan |
+| `enable_source_scan` | `true` | Source-level dependency scan |
+| `enable_grype` | `true` | Grype vulnerability scanning |
+| `grype_fail_on` | `critical` | Severity threshold to fail (negligible/low/medium/high/critical) |
+| `grype_ignore_file` | `''` | Path to .grype.yaml for CVE suppressions |
+| `source_scan_config` | `''` | Path to sbom-config.yml overrides |
+| `scan_depth` | `2` | Max depth for recursive .gitmodules scan |
+| `python_version` | `3.12` | Python version for source scanner |
+| `runner` | `ubuntu-latest` | Runner label |
+
+### Jobs
+
+4 jobs + summary:
+
+1. **container-scan** — Syft scans Docker image, produces SPDX + CycloneDX JSON
+2. **source-scan** — Custom Python script parses source manifests, produces CycloneDX JSON
+3. **merge-sboms** — Merges container + source SBOMs, deduplicates by (name, version)
+4. **vulnerability-scan** — Grype scans merged SBOM, fails on severity threshold
+5. **summary** — PR comment with dependency count + vulnerability table
+
+### Source Scanner: `scripts/source-sbom.py`
+
+Python stdlib only (no pip deps). Parses:
+
+| Source | Files | PURL Pattern |
+|--------|-------|-------------|
+| CMake FetchContent | `**/CMakeLists.txt` | `pkg:github/{owner}/{repo}@{tag}` |
+| Git submodules | `**/.gitmodules` | `pkg:github/{owner}/{repo}` |
+| ROS2 packages | `**/package.xml` | `pkg:ros/{distro}/{name}` |
+| Python deps | `**/pyproject.toml` | `pkg:pypi/{name}@{version}` |
+| Python reqs | `**/requirements*.txt` | `pkg:pypi/{name}@{version}` |
+
+### Config Template: `configs/sbom-config.yml`
+
+Optional config for consuming repos:
+- `exclude_paths` — glob patterns to skip (build/, install/, .git/)
+- `ros_distro` — ROS2 distro name for PURL (default: humble)
+- `extra_components` — manually declared deps not discoverable from source (e.g., libs built from source in Docker)
+
+### Consumer Usage
+
+```yaml
+jobs:
+  sbom:
+    uses: PavelGuzenfeld/standard/.github/workflows/sbom.yml@main
+    with:
+      docker_image: ghcr.io/my-org/my-image:latest
+      grype_fail_on: critical
+      source_scan_config: sbom-config.yml
+    permissions:
+      contents: read
+      pull-requests: write
+      packages: read
+```
+
+### Tool Selection
+
+| Tool | Role | Why |
+|------|------|-----|
+| **Syft** (Anchore) | SBOM generation from containers | Dual SPDX+CycloneDX output, lightweight Go binary, official GitHub Action |
+| **Grype** (Anchore) | Vulnerability scanning | Consumes Syft output natively, configurable thresholds, CVE suppressions |
+| **source-sbom.py** | Source manifest parsing | No existing tool covers CMake FetchContent + ROS2 package.xml + .gitmodules together |
+
+### Output Formats
+
+- **SPDX JSON** — from Syft container scan (compliance standard)
+- **CycloneDX JSON** — merged container + source (used for Grype scanning)
+- **Grype report** — JSON + table format (vulnerability findings)
+
+All uploaded as GitHub Actions artifacts.
+
+---
+
 ## Planned: Trend Dashboard
 
 - Weekly scheduled workflow aggregates scan results
@@ -152,4 +260,6 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | Flawfinder integration | Done | - |
 | PR gate keeping (required checks) | Done | Branch protection rules |
 | Full-codebase scan (local) | Done | Builder container |
+| SBOM generation (Syft + source) | Planned | Docker image |
+| Grype vulnerability scanning | Planned | Merged SBOM |
 | Trend dashboard | Planned | - |
