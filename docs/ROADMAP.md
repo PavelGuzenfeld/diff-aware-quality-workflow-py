@@ -9,7 +9,7 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | clang-format | Code formatting | Opt-in, blocking |
 | clang-tidy | CERT + Core Guidelines + bugprone | Blocking (diff-aware) |
 | cppcheck | Value-flow + CWE analysis | Blocking (diff-aware) |
-| Flawfinder | CWE lexical scan | Not yet integrated |
+| Flawfinder | CWE lexical scan | Blocking (threshold=0) |
 | Semgrep | Python taint/OWASP | Blocking |
 | pip-audit | Python CVE scanning | Blocking |
 
@@ -72,196 +72,51 @@ int count = safe_cast<int>(container.size());
 
 ---
 
-## Planned: Automatic Ticket Creation from Scan Results
+## PR Gate Keeping
 
-### Goal
+All standards checks run as **required status checks** on pull requests. PRs cannot be merged until all checks pass. This eliminates the need for separate ticket tracking — findings are caught and fixed before they enter the codebase.
 
-CI scans automatically create or update Jira tickets for new findings, so nothing slips through without tracking. This will be a reusable workflow that any consuming project can call.
-
-### Architecture
+### How It Works
 
 ```
 PR opened/updated
        |
-  quality workflow runs
+  Standards workflow runs (diff-aware)
        |
-  ┌────┴────────────────────┐
-  │  clang-tidy, cppcheck,  │
-  │  flawfinder, semgrep    │
-  │  produce SARIF / XML    │
-  └────┬────────────────────┘
+  ┌────┴──────────────────────────┐
+  │  clang-format    → pass/fail  │
+  │  clang-tidy      → pass/fail  │
+  │  cppcheck        → pass/fail  │
+  │  flawfinder      → pass/fail  │
+  └────┬──────────────────────────┘
        |
-  new job: create-tickets
+  All pass? ──── No ──→ PR blocked, author fixes
        |
-  ┌────┴────────────────────┐
-  │  Python script:         │
-  │  1. Parse scan results  │
-  │  2. Diff against        │
-  │     baseline file       │
-  │  3. For NEW findings:   │
-  │     create Jira ticket  │
-  │  4. For FIXED findings: │
-  │     close Jira ticket   │
-  │  5. Comment on PR with  │
-  │     summary             │
-  └─────────────────────────┘
+      Yes
+       |
+  PR mergeable
 ```
 
-### Baseline File (`.standards-baseline.json`)
+### Branch Protection Rules
 
-Track known findings so only **new** issues generate tickets:
+Configure in GitHub repo settings (`Settings > Branches > Branch protection rules`):
 
-```json
-{
-  "version": 1,
-  "generated": "2026-02-17T00:00:00Z",
-  "clang_tidy": {
-    "total_warnings": 0,
-    "findings": [
-      {
-        "check": "cert-err33-c",
-        "file": "src/example.cpp",
-        "line": 92,
-        "hash": "a1b2c3d4"
-      }
-    ]
-  },
-  "cppcheck": {
-    "total_findings": 0,
-    "findings": []
-  },
-  "flawfinder": {
-    "total_findings": 0,
-    "findings": [
-      {
-        "cwe": "CWE-78",
-        "file": "src/example.cpp",
-        "line": 81,
-        "hash": "e5f6g7h8"
-      }
-    ]
-  }
-}
-```
+- **Require status checks to pass before merging**: enabled
+- **Required checks**: `clang-format`, `Clang-Tidy (CERT + Core Guidelines)`, `Cppcheck (CWE)`, `Flawfinder (CWE)`
+- **Require branches to be up to date**: enabled (ensures checks run against latest base)
 
-### Ticket Creation Script
+### Suppression Policy
 
-```
-Input:  SARIF/XML scan results + baseline file
-Output: Jira tickets for new findings, PR comment with summary
+When a finding is a false positive:
 
-Logic:
-  1. Parse current scan results into normalized findings list
-  2. Load baseline file
-  3. Compute diff: new = current - baseline, fixed = baseline - current
-  4. For each NEW finding:
-     - Create Jira ticket (type=Bug, labels=[sast, auto-generated])
-     - Title: "[SAST/{tool}] {check}: {short description} in {file}"
-     - Description: full context, CWE mapping, fix suggestion
-  5. For each FIXED finding:
-     - Find matching open ticket, transition to Done
-  6. Post PR comment with summary table
-  7. Update baseline file (committed back to branch)
-```
+| Tool | Suppression Method |
+|------|-------------------|
+| clang-tidy | `// NOLINTNEXTLINE(check-name)` or `// NOLINT(check-name)` |
+| cppcheck | Add to `.cppcheck-suppressions` file |
+| flawfinder | `// Flawfinder: ignore` on the same line |
+| clang-format | Wrap with `// clang-format off` / `// clang-format on` |
 
-### Reusable Workflow Interface
-
-```yaml
-# Consumer usage
-jobs:
-  sast-tickets:
-    uses: PavelGuzenfeld/standard/.github/workflows/sast-tickets.yml@main
-    with:
-      baseline_file: .standards-baseline.json
-      jira_project: MYPROJECT
-      scan_artifacts: '*-results'
-    secrets:
-      jira_token: ${{ secrets.JIRA_API_TOKEN }}
-      jira_user: ${{ secrets.JIRA_USER }}
-      jira_url: ${{ secrets.JIRA_URL }}
-```
-
-### Workflow Implementation
-
-```yaml
-# .github/workflows/sast-tickets.yml
-name: SAST Ticket Creation
-on:
-  workflow_call:
-    inputs:
-      baseline_file:
-        type: string
-        default: '.standards-baseline.json'
-      jira_project:
-        required: true
-        type: string
-      scan_artifacts:
-        type: string
-        default: '*-results'
-    secrets:
-      jira_token:
-        required: true
-      jira_user:
-        required: true
-      jira_url:
-        required: true
-
-jobs:
-  create-tickets:
-    name: Auto-create SAST tickets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: ${{ inputs.scan_artifacts }}
-      - name: Create/update Jira tickets
-        env:
-          JIRA_TOKEN: ${{ secrets.jira_token }}
-          JIRA_USER: ${{ secrets.jira_user }}
-          JIRA_URL: ${{ secrets.jira_url }}
-        run: |
-          python3 scripts/create_sast_tickets.py \
-            --baseline ${{ inputs.baseline_file }} \
-            --project ${{ inputs.jira_project }} \
-            --pr-number ${{ github.event.pull_request.number }}
-```
-
-### Ticket Format
-
-**Title:** `[SAST/{tool}] {check-id}: {short description} in {file}`
-
-**Description:**
-
-```markdown
-## SAST Finding
-
-**Tool:** clang-tidy 21
-**Check:** cert-err33-c
-**Severity:** error (CERT violation)
-**File:** `src/example.cpp:92`
-**CWE:** CWE-391 (Unchecked Error Condition)
-
-## Context
-The value returned by `fclose()` should not be disregarded;
-neglecting it may lead to errors.
-
-## Suggested Fix
-Check the return value and handle errors appropriately.
-
-## References
-- [SEI CERT ERR33-C](https://wiki.sei.cmu.edu/confluence/display/c/ERR33-C)
-- Auto-generated by Standards Enforcement CI
-```
-
-**Labels:** `sast`, `auto-generated`, `{tool-name}`, `{cwe-id}`
-
-### Deduplication Strategy
-
-- Hash each finding by: `{tool}:{check}:{file}:{line_range}`
-- Line range = line +/- 3 (accounts for small refactors shifting lines)
-- Before creating a ticket, search Jira for existing open ticket with same hash
-- If found, add comment with latest scan date instead of creating a duplicate
+Suppressions are reviewed as part of the PR code review.
 
 ## Planned: Trend Dashboard
 
@@ -269,14 +124,23 @@ Check the return value and handle errors appropriately.
 - Posts trend report to Slack/Jira dashboard
 - Tracks: total findings over time, new vs fixed per sprint, findings by package
 
-## Planned: Full-Codebase Scan Mode
+## Full-Codebase Scan Mode (Local)
 
-In addition to diff-aware PR checks, provide a workflow for full-codebase scans:
+Run full scans locally to audit the entire codebase (not just PR diffs):
 
-- Scheduled (weekly/nightly) runs on the main branch
-- Reports all findings, not just diff
-- Feeds into the baseline file for ticket creation
-- Useful for initial onboarding of legacy codebases
+```bash
+# Inside the builder container:
+# clang-tidy (all files)
+find . -name '*.cpp' | xargs clang-tidy -p build/
+
+# cppcheck (all files)
+cppcheck --enable=all --suppressions-list=.cppcheck-suppressions .
+
+# flawfinder (all files)
+flawfinder --minlevel=2 --columns --context .
+```
+
+Useful for initial onboarding of legacy codebases or periodic audits.
 
 ## Timeline
 
@@ -285,7 +149,7 @@ In addition to diff-aware PR checks, provide a workflow for full-codebase scans:
 | Diff-aware C++ quality | Done | - |
 | Diff-aware Python quality | Done | - |
 | Python SAST (Semgrep, pip-audit) | Done | - |
-| Flawfinder integration | Planned | - |
-| Automatic Jira ticket creation | Planned | Jira API secrets |
-| Trend dashboard | Planned | Ticket creation |
-| Full-codebase scan mode | Planned | - |
+| Flawfinder integration | Done | - |
+| PR gate keeping (required checks) | Done | Branch protection rules |
+| Full-codebase scan (local) | Done | Builder container |
+| Trend dashboard | Planned | - |
