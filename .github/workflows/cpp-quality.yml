@@ -83,6 +83,14 @@ on:
         type: boolean
         default: false
         description: 'Ban raw new/delete in non-test source files (opt-in)'
+      clang_tidy_jobs:
+        type: number
+        default: 4
+        description: 'Parallel clang-tidy jobs inside Docker container'
+      exclude_file:
+        type: string
+        default: ''
+        description: 'Path to file listing excluded paths (one per line, # comments)'
 
 permissions:
   contents: read
@@ -112,7 +120,38 @@ jobs:
             echo "Found $(echo "$FILES" | wc -l) changed file(s)."
           fi
 
-      - name: Run clang-tidy in Docker
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cpp_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Run clang-tidy in Docker (batch)
         if: steps.changed.outputs.skip == 'false'
         id: clang-tidy
         run: |
@@ -126,43 +165,48 @@ jobs:
             SETUP_CMD="${{ inputs.source_setup }} && "
           fi
 
-          ERRORS=0
-          RESULTS=""
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            OUTPUT=$(docker run --rm \
-              -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
-              -w "${{ inputs.source_mount }}" \
-              "${{ inputs.docker_image }}" \
-              bash -c "${SETUP_CMD}clang-tidy -p ${{ inputs.compile_commands_path }} $CONFIG_ARG $file" 2>&1 || true)
+          JOBS=${{ inputs.clang_tidy_jobs }}
 
-            if [ -n "$OUTPUT" ]; then
-              RESULTS="${RESULTS}${OUTPUT}\n"
-              # Emit GitHub annotations
-              echo "$OUTPUT" | grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' | while IFS= read -r line; do
-                ann_file=$(echo "$line" | cut -d: -f1)
-                ann_line=$(echo "$line" | cut -d: -f2)
-                ann_col=$(echo "$line" | cut -d: -f3)
-                severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
-                message=$(echo "$line" | cut -d: -f5-)
-                if [ "$severity" = "error" ]; then
-                  echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
-                else
-                  echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
-                fi
-              done
-              ERR_COUNT=$(echo "$OUTPUT" | grep -cE '^.+:[0-9]+:[0-9]+: error:' || true)
-              ERRORS=$((ERRORS + ERR_COUNT))
+          # Copy file list into workspace for Docker access
+          cp /tmp/changed_cpp_files.txt changed_files.txt
+
+          # Single container, parallel analysis via xargs
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}cat changed_files.txt | \
+              xargs -P${JOBS} -I{} clang-tidy -p ${{ inputs.compile_commands_path }} $CONFIG_ARG {} 2>&1" \
+            | tee /tmp/clang_tidy_output.txt || true
+
+          # Count findings — exclude clang-diagnostic-* (GCC/Clang differences)
+          WARNS=$(grep -c "warning:" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
+          ALL_ERRS=$(grep -c "error:" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
+          DIAG_ERRS=$(grep -c "clang-diagnostic-" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
+          TIDY_ERRS=$((ALL_ERRS - DIAG_ERRS))
+          [ "$TIDY_ERRS" -lt 0 ] && TIDY_ERRS=0
+
+          echo "=== Summary: ${WARNS} warnings, ${TIDY_ERRS} tidy errors (${DIAG_ERRS} diagnostic errors excluded) ==="
+
+          # Emit GitHub annotations (first 50)
+          grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' /tmp/clang_tidy_output.txt | head -50 | while IFS= read -r line; do
+            ann_file=$(echo "$line" | cut -d: -f1)
+            ann_line=$(echo "$line" | cut -d: -f2)
+            ann_col=$(echo "$line" | cut -d: -f3)
+            severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+            message=$(echo "$line" | cut -d: -f5-)
+            if [ "$severity" = "error" ]; then
+              echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
+            else
+              echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
             fi
-          done < /tmp/changed_cpp_files.txt
+          done
 
-          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNS" >> $GITHUB_OUTPUT
+          echo "errors=$TIDY_ERRS" >> $GITHUB_OUTPUT
 
-          # Save results for summary
-          echo -e "$RESULTS" > /tmp/clang_tidy_output.txt
-
-          if [ "$ERRORS" -gt 0 ]; then
-            echo "clang-tidy: $ERRORS error(s) found."
+          if [ "$TIDY_ERRS" -gt 0 ] || [ "$WARNS" -gt 0 ]; then
+            echo "clang-tidy: $TIDY_ERRS error(s) and $WARNS warning(s) found."
             exit 1
           fi
 
@@ -187,6 +231,37 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "$FILES" > /tmp/changed_cpp_files.txt
             echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cpp_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: Run cppcheck in Docker
@@ -280,6 +355,37 @@ jobs:
             echo "Found $(echo "$FILES" | wc -l) changed file(s)."
           fi
 
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cpp_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Run clang-format in Docker
         if: steps.changed.outputs.skip == 'false'
         id: clang-format
@@ -336,6 +442,26 @@ jobs:
           FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
             | grep -E "$EXT_PATTERN" \
             | grep -iE "${{ inputs.test_file_pattern }}" || true)
+
+          # Apply exclusion filter
+          if [ -n "$FILES" ] && [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "${{ inputs.exclude_file }}"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              FILTERED=""
+              while IFS= read -r fp; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do [[ "$fp" == "$p"* ]] && excl=true && break; done
+                [ "$excl" = false ] && FILTERED="${FILTERED}${fp}"$'\n'
+              done <<< "$FILES"
+              FILES=$(echo "$FILTERED" | sed '/^$/d')
+            fi
+          fi
 
           if [ -z "$FILES" ]; then
             echo "No test files changed — skipping doctest check."
@@ -443,6 +569,26 @@ jobs:
 
           CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- || true)
 
+          # Apply exclusion filter
+          if [ -n "$CHANGED_FILES" ] && [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
+              PATTERNS=()
+              while IFS= read -r line || [ -n "$line" ]; do
+                  line="${line%%#*}"; line="$(echo "$line" | xargs)"
+                  [ -z "$line" ] && continue
+                  PATTERNS+=("$line")
+              done < "${{ inputs.exclude_file }}"
+              if [ ${#PATTERNS[@]} -gt 0 ]; then
+                  FILTERED=""
+                  while IFS= read -r fp; do
+                      [ -z "$fp" ] && continue
+                      excl=false
+                      for p in "${PATTERNS[@]}"; do [[ "$fp" == "$p"* ]] && excl=true && break; done
+                      [ "$excl" = false ] && FILTERED="${FILTERED}${fp}"$'\n'
+                  done <<< "$CHANGED_FILES"
+                  CHANGED_FILES=$(echo "$FILTERED" | sed '/^$/d')
+              fi
+          fi
+
           if [ -z "$CHANGED_FILES" ]; then
               echo "No files changed — skipping file naming check."
               echo "violations=0" >> $GITHUB_OUTPUT
@@ -547,6 +693,26 @@ jobs:
             | grep -E "$EXT_PATTERN" \
             | grep -viE "${{ inputs.test_file_pattern }}" || true)
 
+          # Apply exclusion filter
+          if [ -n "$FILES" ] && [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "${{ inputs.exclude_file }}"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              FILTERED=""
+              while IFS= read -r fp; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do [[ "$fp" == "$p"* ]] && excl=true && break; done
+                [ "$excl" = false ] && FILTERED="${FILTERED}${fp}"$'\n'
+              done <<< "$FILES"
+              FILES=$(echo "$FILTERED" | sed '/^$/d')
+            fi
+          fi
+
           if [ -z "$FILES" ]; then
             echo "No non-test C++ files changed — skipping cout ban check."
             echo "violations=0" >> $GITHUB_OUTPUT
@@ -601,6 +767,26 @@ jobs:
           FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
             | grep -E "$EXT_PATTERN" \
             | grep -viE "${{ inputs.test_file_pattern }}" || true)
+
+          # Apply exclusion filter
+          if [ -n "$FILES" ] && [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "${{ inputs.exclude_file }}"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              FILTERED=""
+              while IFS= read -r fp; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do [[ "$fp" == "$p"* ]] && excl=true && break; done
+                [ "$excl" = false ] && FILTERED="${FILTERED}${fp}"$'\n'
+              done <<< "$FILES"
+              FILES=$(echo "$FILTERED" | sed '/^$/d')
+            fi
+          fi
 
           if [ -z "$FILES" ]; then
             echo "No non-test C++ files changed — skipping new/delete ban check."
@@ -683,6 +869,7 @@ jobs:
             if (newBan && newBan !== 'skipped') {
               body += `| new/delete ban | ${newBan === 'success' ? 'clean' : 'raw new/delete found'} |\n`;
             }
+            // Scaffolded for flawfinder (added by enable_flawfinder input)
             body += '\n---\n*Only files changed in this PR were checked.*';
 
             const { data: comments } = await github.rest.issues.listComments({

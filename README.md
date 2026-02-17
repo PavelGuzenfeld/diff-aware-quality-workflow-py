@@ -71,7 +71,7 @@ jobs:
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (20 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (22 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -95,6 +95,8 @@ jobs:
 | `file_naming_allowed_prefixes` | `_` | Allowed prefixes for file names |
 | `ban_cout` | `false` | Ban cout/cerr/printf in non-test files |
 | `ban_new` | `false` | Ban raw new/delete in non-test files |
+| `clang_tidy_jobs` | `4` | Parallel clang-tidy jobs inside Docker |
+| `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
 
 </details>
 

@@ -299,6 +299,30 @@ src/my_package/include
 
 Lines starting with `#` are comments. Blank lines are ignored.
 
+### Exclusion File
+
+Create a `.standards-exclude` file listing paths to skip (vendored code, submodules, build artifacts):
+
+```
+# Vendored third-party
+vendor/httplib.h
+
+# External submodules (have own CI)
+external_sdk/
+protocol_icd/
+
+# Build artifacts
+build/
+install/
+```
+
+One path prefix per line, `#` comments. All checks (clang-tidy, cppcheck, clang-format, banned patterns, file naming) respect this file:
+
+```yaml
+with:
+  exclude_file: .standards-exclude
+```
+
 ### Custom File Naming Exceptions
 
 Create a file with one regex per line, matched against path segments:
@@ -431,6 +455,6 @@ with:
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).
 
-- [C++ inputs](../README.md#c-inputs) (20 inputs)
+- [C++ inputs](../README.md#c-inputs) (22 inputs)
 - [Python inputs](../README.md#python-inputs) (8 inputs)
 - [Python SAST inputs](../README.md#python-sast-inputs) (8 inputs)
