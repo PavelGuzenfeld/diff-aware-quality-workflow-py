@@ -119,6 +119,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  security-events: write
 
 jobs:
   clang-tidy:
@@ -175,12 +176,21 @@ jobs:
             fi
           fi
 
+      - name: Prepare cache paths
+        if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
+        id: cache-paths
+        run: |
+          {
+            echo "paths<<EOF"
+            echo "${{ inputs.build_cache_paths }}" | tr ' ' '\n'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Restore build cache
         if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ inputs.build_cache_paths }}
+          path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}
           restore-keys: |
             ${{ inputs.build_cache_key }}-
@@ -900,6 +910,37 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
             echo "$FILES" > /tmp/changed_cpp_files.txt
             echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cpp_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
           fi
 
       - name: Install flawfinder
