@@ -366,7 +366,7 @@ with:
 
 ### ROS2 / Colcon Projects
 
-For ROS2 projects that need environment sourcing:
+For simple ROS2 projects that already have `compile_commands.json` in the Docker image:
 
 ```yaml
 with:
@@ -376,6 +376,45 @@ with:
   cppcheck_include_file: cppcheck.include
   runner: self-hosted
 ```
+
+For projects that need to build `compile_commands.json` as part of CI (e.g., colcon workspaces), use the pre-analysis script + build cache:
+
+```yaml
+with:
+  docker_image: ghcr.io/your-org/ros2-dev:humble
+  source_setup: 'source /opt/ros/humble/setup.bash'
+  compile_commands_path: build
+  pre_analysis_script: .github/scripts/pre-analysis.sh
+  build_cache_key: clang-tidy-build-${{ hashFiles('**/CMakeLists.txt', '**/package.xml') }}
+  runner: self-hosted
+```
+
+Example `.github/scripts/pre-analysis.sh`:
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build workspace to generate compile_commands.json
+colcon build \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  --event-handlers console_cohesion+
+
+# Merge per-package compile databases into single file
+python3 -c "
+import json, glob
+merged, seen = [], set()
+for f in sorted(glob.glob('build/*/compile_commands.json')):
+    for entry in json.load(open(f)):
+        key = entry.get('file', '')
+        if key not in seen:
+            seen.add(key)
+            merged.append(entry)
+json.dump(merged, open('build/compile_commands.json', 'w'), indent=2)
+print(f'Merged {len(merged)} entries')
+"
+```
+
+The `build_cache_key` input enables `actions/cache@v4` to cache build artifacts between runs. On cache hit, only changed packages need rebuilding.
 
 ### Self-Hosted Runners
 
@@ -462,6 +501,6 @@ with:
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).
 
-- [C++ inputs](../README.md#c-inputs) (22 inputs)
+- [C++ inputs](../README.md#c-inputs) (25 inputs)
 - [Python inputs](../README.md#python-inputs) (8 inputs)
 - [Python SAST inputs](../README.md#python-sast-inputs) (8 inputs)
