@@ -13,6 +13,65 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | Semgrep | Python taint/OWASP | Blocking |
 | pip-audit | Python CVE scanning | Blocking |
 
+## Coding Conventions & Whitelisted Patterns
+
+These conventions are enforced project-wide. Findings matching these rules should be handled by convention enforcement, not tracked as individual bugs.
+
+### Named Parameters Required
+
+All function parameters **must** be named, even if unused. Use `[[maybe_unused]]` for intentionally unused parameters instead of leaving them unnamed.
+
+```cpp
+// Bad — unnamed parameter
+void callback(int, const std::string&);
+
+// Good — named + attributed
+void callback([[maybe_unused]] int event_id, const std::string& message);
+```
+
+**Enforcement:** `readability-named-parameter` in clang-tidy (Phase 2 as error).
+
+### GStreamer Binding Exemptions
+
+Code implementing GStreamer type bindings (element registration, pad templates, signal handlers, type casting macros) is **exempt** from:
+
+- `cppcoreguidelines-pro-type-cstyle-cast` — GStreamer macros (`GST_ELEMENT_CAST`, `GST_PAD_CAST`) expand to C-style casts
+- `bugprone-casting-through-void` — GStreamer `G_DEFINE_TYPE` and type-check macros cast through `void*`
+- `bugprone-assignment-in-if-condition` — GStreamer `GST_*` macros assign in conditions by design
+- `cppcoreguidelines-pro-type-vararg` — GStreamer property/signal APIs use variadic functions
+
+Use `// NOLINT(check-name)` on GStreamer macro lines. Do NOT blanket-suppress these checks globally.
+
+### Replace `fscanf`/`fprintf`/`printf` with `fmt`
+
+All C-style formatted I/O (`fscanf`, `fprintf`, `printf`, `sprintf`) must be replaced with the `fmt` library:
+
+```cpp
+// Bad
+fprintf(logfile, "%lu\t%lu\t%lu\n", pts, pre, post);
+
+// Good
+fmt::print(logfile, "{}\t{}\t{}\n", pts, pre, post);
+```
+
+**Dependencies:** `find_package(fmt REQUIRED)` + `target_link_libraries(... fmt::fmt)`
+
+### Use `safe_cast` for Numeric Conversions
+
+All narrowing numeric conversions must use `safe_cast<T>()` from `rocx_utils` instead of `static_cast` or implicit conversions. `safe_cast` validates the value fits in the target type at runtime.
+
+```cpp
+// Bad — silent narrowing
+int count = static_cast<int>(container.size());
+
+// Good — checked conversion
+int count = safe_cast<int>(container.size());
+```
+
+**Enforcement:** `bugprone-narrowing-conversions` in clang-tidy (Phase 2 as error).
+
+---
+
 ## Planned: Automatic Ticket Creation from Scan Results
 
 ### Goal
