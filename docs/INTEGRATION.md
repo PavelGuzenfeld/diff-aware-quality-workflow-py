@@ -113,9 +113,16 @@ jobs:
       # Step 7: Enforce doctest over gtest
       enforce_doctest: true
 
+      # Step 8: Enable flawfinder CWE scan
+      enable_flawfinder: true
+
+      # Step 9: Upload SARIF to GitHub Security tab
+      enable_sarif: true
+
     permissions:
       contents: read
       pull-requests: write
+      security-events: write  # Required for SARIF upload
 ```
 
 ### 4. Add SAST (C++)

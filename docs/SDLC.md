@@ -122,8 +122,9 @@ Only files changed in the PR are checked. Detection uses `git diff --name-only -
 | Static analysis | clang-tidy | Docker | Always |
 | Bug/style checking | cppcheck | Docker | Always |
 | Code formatting | clang-format | Docker | Opt-in |
+| CWE lexical scan | flawfinder | Host | Opt-in |
 
-All three run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses.
+clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Flawfinder runs on the host (pure lexical scan, no compilation needed).
 
 ### Diff-Aware Linting (Python)
 

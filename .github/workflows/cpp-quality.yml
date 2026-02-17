@@ -91,6 +91,18 @@ on:
         type: string
         default: ''
         description: 'Path to file listing excluded paths (one per line, # comments)'
+      enable_flawfinder:
+        type: boolean
+        default: false
+        description: 'Enable flawfinder CWE lexical scan (opt-in)'
+      flawfinder_min_level:
+        type: number
+        default: 2
+        description: 'Minimum flawfinder finding level (1-5)'
+      enable_sarif:
+        type: boolean
+        default: false
+        description: 'Upload SARIF to GitHub Security tab (requires security-events: write)'
 
 permissions:
   contents: read
@@ -831,10 +843,84 @@ jobs:
 
           echo "new-delete-ban: no violations found."
 
+  flawfinder:
+    name: flawfinder
+    runs-on: ${{ inputs.runner }}
+    if: inputs.enable_flawfinder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed C++ files
+        id: changed
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No C++ files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_cpp_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Install flawfinder
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          python3 -m pip install --user flawfinder 2>/dev/null || \
+            (sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip && python3 -m pip install --user flawfinder)
+          export PATH="$HOME/.local/bin:$PATH"
+          flawfinder --version
+
+      - name: Run flawfinder
+        if: steps.changed.outputs.skip == 'false'
+        id: flawfinder
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          FILES=$(cat /tmp/changed_cpp_files.txt | tr '\n' ' ')
+
+          # Generate SARIF and human-readable output
+          flawfinder --minlevel=${{ inputs.flawfinder_min_level }} --sarif --dataonly $FILES > flawfinder.sarif 2>/dev/null || true
+          flawfinder --minlevel=${{ inputs.flawfinder_min_level }} --columns --context --dataonly $FILES > flawfinder.txt 2>&1 || true
+
+          echo "::group::Flawfinder Results"
+          cat flawfinder.txt
+          echo "::endgroup::"
+
+          # Any finding on changed files = failure (threshold 0)
+          HITS=$(grep -c "^  " flawfinder.txt 2>/dev/null || echo 0)
+          echo "Flawfinder found ${HITS} potential issues (minlevel=${{ inputs.flawfinder_min_level }})"
+          echo "hits=$HITS" >> $GITHUB_OUTPUT
+
+          if [ "$HITS" -gt 0 ]; then
+            echo "::error::Flawfinder found ${HITS} CWE issues. Suppress false positives with '// Flawfinder: ignore' or fix the findings."
+            exit 1
+          fi
+
+      - name: Upload results
+        if: always() && steps.changed.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flawfinder-results
+          path: |
+            flawfinder.sarif
+            flawfinder.txt
+
+      - name: Upload SARIF
+        if: always() && steps.changed.outputs.skip == 'false' && inputs.enable_sarif
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: flawfinder.sarif
+          category: flawfinder
+
   summary:
     name: Post Summary
     runs-on: ${{ inputs.runner }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -849,6 +935,7 @@ jobs:
             const naming = '${{ needs.file-naming.result }}';
             const coutBan = '${{ needs.cout-ban.result }}';
             const newBan = '${{ needs.new-delete-ban.result }}';
+            const flaw = '${{ needs.flawfinder.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
             body += '| Tool | Status |\n|------|--------|\n';
@@ -869,7 +956,9 @@ jobs:
             if (newBan && newBan !== 'skipped') {
               body += `| new/delete ban | ${newBan === 'success' ? 'clean' : 'raw new/delete found'} |\n`;
             }
-            // Scaffolded for flawfinder (added by enable_flawfinder input)
+            if (flaw && flaw !== 'skipped') {
+              body += `| flawfinder | ${flaw === 'success' ? 'clean' : 'CWE findings'} |\n`;
+            }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
             const { data: comments } = await github.rest.issues.listComments({

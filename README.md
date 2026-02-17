@@ -64,14 +64,14 @@ jobs:
 
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
-| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, file naming, banned patterns |
+| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, file naming, banned patterns |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (22 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (25 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -97,6 +97,9 @@ jobs:
 | `ban_new` | `false` | Ban raw new/delete in non-test files |
 | `clang_tidy_jobs` | `4` | Parallel clang-tidy jobs inside Docker |
 | `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
+| `enable_flawfinder` | `false` | Enable flawfinder CWE lexical scan |
+| `flawfinder_min_level` | `2` | Minimum flawfinder finding level (1-5) |
+| `enable_sarif` | `false` | Upload SARIF to GitHub Security tab |
 
 </details>
 
