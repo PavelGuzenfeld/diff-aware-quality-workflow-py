@@ -103,6 +103,18 @@ on:
         type: boolean
         default: false
         description: 'Upload SARIF to GitHub Security tab (requires security-events: write)'
+      pre_analysis_script:
+        type: string
+        default: ''
+        description: 'Script path (in repo) to run inside Docker before analysis (build compile_commands.json, etc.)'
+      build_cache_key:
+        type: string
+        default: ''
+        description: 'Cache key for build artifacts (empty = no caching)'
+      build_cache_paths:
+        type: string
+        default: 'build install'
+        description: 'Space-separated paths to cache'
 
 permissions:
   contents: read
@@ -162,6 +174,29 @@ jobs:
               echo "skip=true" >> $GITHUB_OUTPUT
             fi
           fi
+
+      - name: Restore build cache
+        if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ inputs.build_cache_paths }}
+          key: ${{ inputs.build_cache_key }}
+          restore-keys: |
+            ${{ inputs.build_cache_key }}-
+
+      - name: Run pre-analysis script
+        if: steps.changed.outputs.skip == 'false' && inputs.pre_analysis_script != ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}bash ${{ inputs.pre_analysis_script }}"
 
       - name: Run clang-tidy in Docker (batch)
         if: steps.changed.outputs.skip == 'false'

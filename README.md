@@ -71,7 +71,7 @@ jobs:
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (25 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (28 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -100,6 +100,9 @@ jobs:
 | `enable_flawfinder` | `false` | Enable flawfinder CWE lexical scan |
 | `flawfinder_min_level` | `2` | Minimum flawfinder finding level (1-5) |
 | `enable_sarif` | `false` | Upload SARIF to GitHub Security tab |
+| `pre_analysis_script` | `''` | Script to run inside Docker before analysis (build compile_commands.json, etc.) |
+| `build_cache_key` | `''` | Cache key for build artifacts (empty = no caching) |
+| `build_cache_paths` | `build install` | Space-separated paths to cache |
 
 </details>
 
