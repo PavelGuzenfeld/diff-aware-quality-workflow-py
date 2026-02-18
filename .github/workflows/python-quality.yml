@@ -27,6 +27,10 @@ on:
         type: string
         default: 'E,W,F,I'
         description: 'Ruff rule selection (comma-separated)'
+      enable_tests:
+        type: boolean
+        default: true
+        description: 'Run pytest and collect coverage (disable for projects with external test deps like ROS2)'
       fail_under:
         type: number
         default: 100
@@ -83,11 +87,13 @@ jobs:
         continue-on-error: true
 
       - name: Run tests and collect coverage
+        if: inputs.enable_tests
         run: |
           pytest ${{ inputs.test_dirs }} \
             --cov --cov-report=xml --verbose
 
       - name: Generate diff coverage report
+        if: inputs.enable_tests
         id: diff-cover
         run: |
           echo "DIFF_COVER_REPORT<<EOF" >> $GITHUB_ENV
