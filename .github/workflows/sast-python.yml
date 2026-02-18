@@ -11,6 +11,10 @@ on:
         type: boolean
         default: true
         description: 'Enable Semgrep security scanning'
+      semgrep_version:
+        type: string
+        default: '1.150.0'
+        description: 'Semgrep Docker image version (pin to avoid breaking changes)'
       semgrep_rules:
         type: string
         default: 'p/python p/owasp-top-ten'
@@ -48,7 +52,7 @@ jobs:
     if: inputs.enable_semgrep
     runs-on: ${{ fromJSON(inputs.runner) }}
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:${{ inputs.semgrep_version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
