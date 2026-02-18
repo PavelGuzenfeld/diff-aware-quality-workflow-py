@@ -175,6 +175,18 @@ on:
         type: string
         default: ''
         description: 'Space-separated packages to measure coverage (empty = all)'
+      coverage_threshold:
+        type: string
+        default: '0'
+        description: 'Minimum overall line coverage % (0 = no threshold, job always passes)'
+      coverage_diff_threshold:
+        type: string
+        default: '0'
+        description: 'Minimum line coverage % for changed lines via diff-cover (0 = disabled)'
+      coverage_diff_report:
+        type: boolean
+        default: false
+        description: 'Generate diff-cover markdown report as artifact'
 
 permissions:
   actions: read
@@ -1466,7 +1478,6 @@ jobs:
     name: Test Coverage
     if: inputs.enable_coverage
     runs-on: ${{ fromJSON(inputs.runner) }}
-    continue-on-error: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -1506,6 +1517,9 @@ jobs:
             SETUP_CMD="${{ inputs.source_setup }} && "
           fi
           docker run --rm \
+            -e COVERAGE_THRESHOLD=${{ inputs.coverage_threshold }} \
+            -e COVERAGE_DIFF_THRESHOLD=${{ inputs.coverage_diff_threshold }} \
+            -e GITHUB_BASE_REF=${{ github.base_ref }} \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
@@ -1573,6 +1587,31 @@ jobs:
               lcov --summary coverage.info --ignore-errors mismatch 2>&1 | tee coverage-summary.txt
             "
 
+      - name: Check coverage threshold (default flow)
+        if: inputs.coverage_script == '' && inputs.coverage_threshold != '0'
+        run: |
+          if [ ! -f coverage-summary.txt ]; then
+            echo "No coverage summary found"
+            exit 1
+          fi
+          OVERALL=$(grep -oP '[\d.]+%' coverage-summary.txt | head -1 | tr -d '%')
+          echo "Overall line coverage: ${OVERALL}%"
+          if [ -n "$OVERALL" ] && [ "$(echo "$OVERALL < ${{ inputs.coverage_threshold }}" | bc -l)" -eq 1 ]; then
+            echo "FAIL: Coverage ${OVERALL}% is below threshold ${{ inputs.coverage_threshold }}%"
+            exit 1
+          fi
+          echo "PASS: Coverage ${OVERALL}% meets threshold ${{ inputs.coverage_threshold }}%"
+
+      - name: Run diff-cover (default flow)
+        if: inputs.coverage_script == '' && inputs.coverage_diff_threshold != '0'
+        run: |
+          pip install diff-cover --quiet
+          diff-cover coverage.info \
+            --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=${{ inputs.coverage_diff_threshold }} \
+            --markdown-report diff-cover.md \
+            2>&1 | tee diff-cover-output.txt
+
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1582,6 +1621,7 @@ jobs:
             coverage.info
             coverage-summary.txt
             coverage_html/
+            diff-cover.md
 
   summary:
     name: Post Summary
@@ -1639,7 +1679,7 @@ jobs:
               body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'unnecessary includes found'} |\n`;
             }
             if (coverage && coverage !== 'skipped') {
-              body += `| Coverage | ${coverage === 'success' ? 'report generated' : 'coverage collected (non-blocking)'} |\n`;
+              body += `| Coverage | ${coverage === 'success' ? 'thresholds met' : 'below threshold'} |\n`;
             }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
