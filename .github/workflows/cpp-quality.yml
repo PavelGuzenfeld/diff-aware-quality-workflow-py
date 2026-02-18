@@ -1423,6 +1423,7 @@ jobs:
             SETUP_CMD="${{ inputs.source_setup }} && "
           fi
           docker run --rm \
+            -e GITHUB_BASE_REF=${{ github.base_ref }} \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
