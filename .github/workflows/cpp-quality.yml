@@ -135,6 +135,18 @@ on:
         type: string
         default: ''
         description: 'Space-separated packages to test (empty = all)'
+      enable_iwyu:
+        type: boolean
+        default: false
+        description: 'Enable Include-What-You-Use analysis (opt-in, non-blocking)'
+      iwyu_script:
+        type: string
+        default: ''
+        description: 'Script to run IWYU analysis (in repo). If empty, uses default flow.'
+      iwyu_mapping_file:
+        type: string
+        default: ''
+        description: 'Path to IWYU mapping file (.imp) in repo'
 
 permissions:
   actions: read
@@ -1174,10 +1186,149 @@ jobs:
               colcon test-result --verbose
             "
 
+  iwyu:
+    name: IWYU
+    if: inputs.enable_iwyu
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Login to GitHub Container Registry
+        if: inputs.docker_image != ''
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Get changed C++ files
+        id: changed
+        run: |
+          EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No C++ files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_cpp_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cpp_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Prepare cache paths
+        if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
+        id: cache-paths
+        run: |
+          {
+            echo "paths<<EOF"
+            echo "${{ inputs.build_cache_paths }}" | tr ' ' '\n'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Restore build cache
+        if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cache-paths.outputs.paths }}
+          key: ${{ inputs.build_cache_key }}
+          restore-keys: |
+            ${{ inputs.build_cache_key }}-
+
+      - name: Run IWYU script
+        if: steps.changed.outputs.skip == 'false' && inputs.iwyu_script != ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}bash ${{ inputs.iwyu_script }}"
+
+      - name: Run IWYU default flow
+        if: steps.changed.outputs.skip == 'false' && inputs.iwyu_script == ''
+        id: iwyu
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+
+          MAPPING_ARG=""
+          if [ -n "${{ inputs.iwyu_mapping_file }}" ]; then
+            MAPPING_ARG="-Xiwyu --mapping_file=${{ inputs.source_mount }}/${{ inputs.iwyu_mapping_file }}"
+          fi
+
+          cp /tmp/changed_cpp_files.txt changed_files.txt
+
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              if ! command -v include-what-you-use &>/dev/null; then
+                echo 'Installing include-what-you-use...'
+                apt-get update -qq && apt-get install -y -qq iwyu 2>/dev/null || {
+                  echo 'ERROR: Could not install iwyu'
+                  exit 1
+                }
+              fi
+              echo \"IWYU version: \$(include-what-you-use --version 2>&1 | head -1 || true)\"
+              cat changed_files.txt | while IFS= read -r file; do
+                [ -z \"\$file\" ] && continue
+                [ -f \"\$file\" ] || continue
+                echo \"  IWYU: \$file\"
+                include-what-you-use -p ${{ inputs.compile_commands_path }} $MAPPING_ARG \"\$file\" 2>&1 || true
+              done
+            " | tee /tmp/iwyu_output.txt || true
+
+          ADD_COUNT=$(grep -c "should add these lines:" /tmp/iwyu_output.txt 2>/dev/null || true)
+          REM_COUNT=$(grep -c "should remove these lines:" /tmp/iwyu_output.txt 2>/dev/null || true)
+          echo ""
+          echo "=== IWYU Summary ==="
+          echo "Files with missing includes: $ADD_COUNT"
+          echo "Files with unnecessary includes: $REM_COUNT"
+          echo "NOTE: This job is non-blocking (report-only)."
+
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, iwyu]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -1194,6 +1345,7 @@ jobs:
             const newBan = '${{ needs.new-delete-ban.result }}';
             const flaw = '${{ needs.flawfinder.result }}';
             const sanitizer = '${{ needs.sanitizer-tests.result }}';
+            const iwyu = '${{ needs.iwyu.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
             body += '| Tool | Status |\n|------|--------|\n';
@@ -1219,6 +1371,9 @@ jobs:
             }
             if (sanitizer && sanitizer !== 'skipped') {
               body += `| ASAN/UBSAN | ${sanitizer === 'success' ? 'clean' : 'sanitizer errors'} |\n`;
+            }
+            if (iwyu && iwyu !== 'skipped') {
+              body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'include suggestions (non-blocking)'} |\n`;
             }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
