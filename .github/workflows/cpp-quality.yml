@@ -121,6 +121,7 @@ on:
         description: 'Pass to actions/checkout submodules parameter (false, true, recursive)'
 
 permissions:
+  actions: read
   contents: read
   packages: read
   pull-requests: write
