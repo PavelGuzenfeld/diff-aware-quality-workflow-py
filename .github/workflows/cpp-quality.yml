@@ -870,11 +870,13 @@ jobs:
             [ -f "$file" ] || continue
 
             # Filter out: smart pointers, operator overloads, placement new, includes,
-            # comment lines (// and leading *), and string/log literals containing "new"
+            # comment lines (// and leading *), inline block comments (/* ... */),
+            # and string/log literals containing "new"
             MATCHES=$(grep -nE "$NEW_PATTERN|$DELETE_PATTERN" "$file" \
               | grep -vE 'make_unique|make_shared|make_obj|operator\s+(new|delete)|placement|#\s*include' \
               | grep -vE '^\s*[0-9]+:\s*//' \
               | grep -vE '^\s*[0-9]+:\s*\*' \
+              | grep -vE '/\*.*\bnew\b.*\*/' \
               | grep -vE '(INFO|WARN|ERROR|DEBUG|LOG|RCLCPP_|SPDLOG_|fmt::)\s*\(' || true)
 
             if [ -n "$MATCHES" ]; then
