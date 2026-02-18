@@ -37,6 +37,7 @@ on:
         description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
   security-events: write
