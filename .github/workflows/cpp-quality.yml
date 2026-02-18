@@ -163,6 +163,18 @@ on:
         type: string
         default: ''
         description: 'Space-separated packages to test with TSAN (empty = all)'
+      enable_coverage:
+        type: boolean
+        default: false
+        description: 'Enable gcov/lcov test coverage reporting (opt-in, non-blocking)'
+      coverage_script:
+        type: string
+        default: ''
+        description: 'Script to build+test with coverage and collect lcov (in repo). If empty, uses default flow.'
+      coverage_packages:
+        type: string
+        default: ''
+        description: 'Space-separated packages to measure coverage (empty = all)'
 
 permissions:
   actions: read
@@ -1316,7 +1328,6 @@ jobs:
     name: IWYU
     if: inputs.enable_iwyu
     runs-on: ${{ fromJSON(inputs.runner) }}
-    continue-on-error: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -1451,10 +1462,131 @@ jobs:
           echo "Files with unnecessary includes: $REM_COUNT"
           echo "NOTE: This job is non-blocking (report-only)."
 
+  coverage:
+    name: Test Coverage
+    if: inputs.enable_coverage
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Login to GitHub Container Registry
+        if: inputs.docker_image != ''
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Prepare cache paths
+        if: inputs.build_cache_key != ''
+        id: cache-paths
+        run: |
+          {
+            echo "paths<<EOF"
+            echo "${{ inputs.build_cache_paths }}" | tr ' ' '\n'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Restore build cache
+        if: inputs.build_cache_key != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cache-paths.outputs.paths }}
+          key: ${{ inputs.build_cache_key }}-coverage
+          restore-keys: |
+            ${{ inputs.build_cache_key }}-coverage-
+            ${{ inputs.build_cache_key }}-
+
+      - name: Run coverage script
+        if: inputs.coverage_script != ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}bash ${{ inputs.coverage_script }}"
+
+      - name: Build with coverage (default flow)
+        if: inputs.coverage_script == ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          PACKAGES_ARG=""
+          if [ -n "${{ inputs.coverage_packages }}" ]; then
+            PACKAGES_ARG="--packages-select ${{ inputs.coverage_packages }}"
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              apt-get update -qq && apt-get install -y -qq lcov 2>/dev/null || true
+              colcon build \
+                --cmake-args \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  \"-DCMAKE_CXX_FLAGS=--coverage -fno-omit-frame-pointer\" \
+                  \"-DCMAKE_C_FLAGS=--coverage -fno-omit-frame-pointer\" \
+                  \"-DCMAKE_EXE_LINKER_FLAGS=--coverage\" \
+                  \"-DCMAKE_SHARED_LINKER_FLAGS=--coverage\" \
+                --event-handlers console_cohesion+ \
+                --continue-on-error \
+                $PACKAGES_ARG
+            "
+
+      - name: Run tests and collect coverage (default flow)
+        if: inputs.coverage_script == ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          PACKAGES_ARG=""
+          if [ -n "${{ inputs.coverage_packages }}" ]; then
+            PACKAGES_ARG="--packages-select ${{ inputs.coverage_packages }}"
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              source install/local_setup.bash 2>/dev/null || true
+              lcov --zerocounters --directory build/ 2>/dev/null || true
+              lcov --capture --initial --directory build/ --output-file coverage_base.info --ignore-errors mismatch 2>/dev/null || true
+              colcon test \
+                --event-handlers console_cohesion+ \
+                --return-code-on-test-failure \
+                $PACKAGES_ARG || true
+              lcov --capture --directory build/ --output-file coverage_test.info --ignore-errors mismatch
+              lcov --add-tracefile coverage_base.info --add-tracefile coverage_test.info --output-file coverage_combined.info --ignore-errors mismatch 2>/dev/null || \
+                cp coverage_test.info coverage_combined.info
+              lcov --remove coverage_combined.info '/opt/*' '/usr/*' 'build/_deps/*' '*/test/*' --output-file coverage.info --ignore-errors mismatch
+              genhtml coverage.info --output-directory coverage_html --ignore-errors mismatch 2>/dev/null || true
+              lcov --summary coverage.info --ignore-errors mismatch 2>&1 | tee coverage-summary.txt
+            "
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.info
+            coverage-summary.txt
+            coverage_html/
+
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -1473,6 +1605,7 @@ jobs:
             const sanitizer = '${{ needs.sanitizer-tests.result }}';
             const tsan = '${{ needs.tsan-tests.result }}';
             const iwyu = '${{ needs.iwyu.result }}';
+            const coverage = '${{ needs.coverage.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
             body += '| Tool | Status |\n|------|--------|\n';
@@ -1503,7 +1636,10 @@ jobs:
               body += `| TSAN | ${tsan === 'success' ? 'clean' : 'thread-safety errors'} |\n`;
             }
             if (iwyu && iwyu !== 'skipped') {
-              body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'include suggestions (non-blocking)'} |\n`;
+              body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'unnecessary includes found'} |\n`;
+            }
+            if (coverage && coverage !== 'skipped') {
+              body += `| Coverage | ${coverage === 'success' ? 'report generated' : 'coverage collected (non-blocking)'} |\n`;
             }
             body += '\n---\n*Only files changed in this PR were checked.*';
 
