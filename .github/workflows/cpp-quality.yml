@@ -115,6 +115,10 @@ on:
         type: string
         default: 'build install'
         description: 'Space-separated paths to cache'
+      checkout_submodules:
+        type: string
+        default: 'false'
+        description: 'Pass to actions/checkout submodules parameter (false, true, recursive)'
 
 permissions:
   contents: read
@@ -130,6 +134,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: ${{ inputs.checkout_submodules }}
 
       - name: Get changed C++ files
         id: changed
@@ -783,7 +788,10 @@ jobs:
           VIOLATIONS=0
           while IFS= read -r file; do
             [ -f "$file" ] || continue
-            MATCHES=$(grep -nE "$BANNED_PATTERNS" "$file" || true)
+            # Filter out comment lines (// and block comment continuations *)
+            MATCHES=$(grep -nE "$BANNED_PATTERNS" "$file" \
+              | grep -vE '^[0-9]+:\s*//' \
+              | grep -vE '^[0-9]+:\s*\*' || true)
             if [ -n "$MATCHES" ]; then
               echo ""
               echo "--- $file ---"
@@ -861,9 +869,13 @@ jobs:
           while IFS= read -r file; do
             [ -f "$file" ] || continue
 
-            # Filter out lines with make_unique, make_shared, operator new/delete, placement new
+            # Filter out: smart pointers, operator overloads, placement new, includes,
+            # comment lines (// and leading *), and string/log literals containing "new"
             MATCHES=$(grep -nE "$NEW_PATTERN|$DELETE_PATTERN" "$file" \
-              | grep -vE 'make_unique|make_shared|make_obj|operator\s+(new|delete)|placement|#\s*include' || true)
+              | grep -vE 'make_unique|make_shared|make_obj|operator\s+(new|delete)|placement|#\s*include' \
+              | grep -vE '^\s*[0-9]+:\s*//' \
+              | grep -vE '^\s*[0-9]+:\s*\*' \
+              | grep -vE '(INFO|WARN|ERROR|DEBUG|LOG|RCLCPP_|SPDLOG_|fmt::)\s*\(' || true)
 
             if [ -n "$MATCHES" ]; then
               echo ""
@@ -966,8 +978,8 @@ jobs:
           cat flawfinder.txt
           echo "::endgroup::"
 
-          # Any finding on changed files = failure (threshold 0)
-          HITS=$(grep -c "^  " flawfinder.txt 2>/dev/null || echo 0)
+          # Count actual findings (lines matching "file:line:col:  [level]"), not advice/context lines
+          HITS=$(grep -cE '^.+:[0-9]+:[0-9]+:' flawfinder.txt 2>/dev/null || echo 0)
           echo "Flawfinder found ${HITS} potential issues (minlevel=${{ inputs.flawfinder_min_level }})"
           echo "hits=$HITS" >> $GITHUB_OUTPUT
 
