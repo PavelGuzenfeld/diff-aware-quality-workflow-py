@@ -147,6 +147,22 @@ on:
         type: string
         default: ''
         description: 'Path to IWYU mapping file (.imp) in repo'
+      enable_tsan:
+        type: boolean
+        default: false
+        description: 'Enable ThreadSanitizer (TSAN) test job (mutually exclusive with ASAN)'
+      tsan_script:
+        type: string
+        default: ''
+        description: 'Script to build+test with TSAN (in repo). If empty, uses default colcon flow.'
+      tsan_suppressions:
+        type: string
+        default: ''
+        description: 'Path to TSAN suppressions file (in repo)'
+      tsan_packages:
+        type: string
+        default: ''
+        description: 'Space-separated packages to test with TSAN (empty = all)'
 
 permissions:
   actions: read
@@ -1186,6 +1202,113 @@ jobs:
               colcon test-result --verbose
             "
 
+  tsan-tests:
+    name: TSAN tests
+    if: inputs.enable_tsan
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Login to GitHub Container Registry
+        if: inputs.docker_image != ''
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Prepare cache paths
+        if: inputs.build_cache_key != ''
+        id: cache-paths
+        run: |
+          {
+            echo "paths<<EOF"
+            echo "${{ inputs.build_cache_paths }}" | tr ' ' '\n'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Restore build cache
+        if: inputs.build_cache_key != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.cache-paths.outputs.paths }}
+          key: ${{ inputs.build_cache_key }}-tsan
+          restore-keys: |
+            ${{ inputs.build_cache_key }}-tsan-
+            ${{ inputs.build_cache_key }}-
+
+      - name: Run TSAN script
+        if: inputs.tsan_script != ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}bash ${{ inputs.tsan_script }}"
+
+      - name: Build with TSAN (default flow)
+        if: inputs.tsan_script == ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          PACKAGES_ARG=""
+          if [ -n "${{ inputs.tsan_packages }}" ]; then
+            PACKAGES_ARG="--packages-select ${{ inputs.tsan_packages }}"
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              colcon build \
+                --cmake-args \
+                  -DCMAKE_BUILD_TYPE=Debug \
+                  -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer -fno-sanitize-recover=all' \
+                  -DCMAKE_C_FLAGS='-fsanitize=thread -fno-omit-frame-pointer -fno-sanitize-recover=all' \
+                  -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' \
+                  -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=thread' \
+                --event-handlers console_cohesion+ \
+                --continue-on-error \
+                $PACKAGES_ARG
+            "
+
+      - name: Run tests under TSAN (default flow)
+        if: inputs.tsan_script == ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          PACKAGES_ARG=""
+          if [ -n "${{ inputs.tsan_packages }}" ]; then
+            PACKAGES_ARG="--packages-select ${{ inputs.tsan_packages }}"
+          fi
+          TSAN_SUPP=""
+          if [ -n "${{ inputs.tsan_suppressions }}" ]; then
+            TSAN_SUPP="suppressions=${{ inputs.source_mount }}/${{ inputs.tsan_suppressions }}"
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1:$TSAN_SUPP" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              source install/local_setup.bash 2>/dev/null || true
+              colcon test \
+                --event-handlers console_cohesion+ \
+                --return-code-on-test-failure \
+                $PACKAGES_ARG
+              colcon test-result --verbose
+            "
+
   iwyu:
     name: IWYU
     if: inputs.enable_iwyu
@@ -1328,7 +1451,7 @@ jobs:
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, iwyu]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -1345,6 +1468,7 @@ jobs:
             const newBan = '${{ needs.new-delete-ban.result }}';
             const flaw = '${{ needs.flawfinder.result }}';
             const sanitizer = '${{ needs.sanitizer-tests.result }}';
+            const tsan = '${{ needs.tsan-tests.result }}';
             const iwyu = '${{ needs.iwyu.result }}';
 
             let body = marker + '\n## C++ Quality Report\n\n';
@@ -1371,6 +1495,9 @@ jobs:
             }
             if (sanitizer && sanitizer !== 'skipped') {
               body += `| ASAN/UBSAN | ${sanitizer === 'success' ? 'clean' : 'sanitizer errors'} |\n`;
+            }
+            if (tsan && tsan !== 'skipped') {
+              body += `| TSAN | ${tsan === 'success' ? 'clean' : 'thread-safety errors'} |\n`;
             }
             if (iwyu && iwyu !== 'skipped') {
               body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'include suggestions (non-blocking)'} |\n`;
