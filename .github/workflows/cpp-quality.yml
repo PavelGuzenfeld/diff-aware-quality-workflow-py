@@ -247,9 +247,14 @@ jobs:
             | tee /tmp/clang_tidy_output.txt || true
 
           # Count findings — exclude clang-diagnostic-* (GCC/Clang differences)
-          WARNS=$(grep -c "warning:" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
-          ALL_ERRS=$(grep -c "error:" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
-          DIAG_ERRS=$(grep -c "clang-diagnostic-" /tmp/clang_tidy_output.txt 2>/dev/null || echo 0)
+          # Note: grep -c outputs "0" AND exits non-zero when no matches,
+          # so "|| echo 0" would produce "0\n0" in $().  Use "|| true" instead.
+          WARNS=$(grep -c "warning:" /tmp/clang_tidy_output.txt 2>/dev/null || true)
+          [ -z "$WARNS" ] && WARNS=0
+          ALL_ERRS=$(grep -c "error:" /tmp/clang_tidy_output.txt 2>/dev/null || true)
+          [ -z "$ALL_ERRS" ] && ALL_ERRS=0
+          DIAG_ERRS=$(grep -c "clang-diagnostic-" /tmp/clang_tidy_output.txt 2>/dev/null || true)
+          [ -z "$DIAG_ERRS" ] && DIAG_ERRS=0
           TIDY_ERRS=$((ALL_ERRS - DIAG_ERRS))
           [ "$TIDY_ERRS" -lt 0 ] && TIDY_ERRS=0
 
@@ -461,6 +466,28 @@ jobs:
             fi
           fi
 
+      - name: Prepare clang-format container
+        if: steps.changed.outputs.skip == 'false' && inputs.docker_image != ''
+        run: |
+          docker run -d --name cf-container \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" sleep infinity
+          # Install clang-format if not already in image
+          docker exec cf-container bash -c "
+            if ! command -v clang-format &>/dev/null; then
+              echo 'clang-format not found, installing...'
+              apt-get update -qq && apt-get install -y -qq clang-format 2>/dev/null || {
+                wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - 2>/dev/null
+                . /etc/os-release
+                echo \"deb http://apt.llvm.org/\${VERSION_CODENAME}/ llvm-toolchain-\${VERSION_CODENAME} main\" \
+                  > /etc/apt/sources.list.d/llvm.list
+                apt-get update -qq && apt-get install -y -qq clang-format
+              }
+            fi
+            clang-format --version
+          "
+
       - name: Run clang-format in Docker
         if: steps.changed.outputs.skip == 'false'
         id: clang-format
@@ -473,11 +500,7 @@ jobs:
           VIOLATIONS=0
           while IFS= read -r file; do
             [ -f "$file" ] || continue
-            OUTPUT=$(docker run --rm \
-              -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
-              -w "${{ inputs.source_mount }}" \
-              "${{ inputs.docker_image }}" \
-              clang-format $FORMAT_ARGS "$file" 2>&1 || true)
+            OUTPUT=$(docker exec cf-container clang-format $FORMAT_ARGS "$file" 2>&1 || true)
 
             if [ -n "$OUTPUT" ]; then
               echo "$OUTPUT"
@@ -499,6 +522,10 @@ jobs:
             echo "clang-format: $VIOLATIONS file(s) with violations."
             exit 1
           fi
+
+      - name: Cleanup clang-format container
+        if: always()
+        run: docker rm -f cf-container 2>/dev/null || true
 
   doctest-enforce:
     name: doctest enforcement
@@ -994,7 +1021,8 @@ jobs:
           echo "::endgroup::"
 
           # Count actual findings (lines matching "file:line:col:  [level]"), not advice/context lines
-          HITS=$(grep -cE '^.+:[0-9]+:[0-9]+:' flawfinder.txt 2>/dev/null || echo 0)
+          HITS=$(grep -cE '^.+:[0-9]+:[0-9]+:' flawfinder.txt 2>/dev/null || true)
+          [ -z "$HITS" ] && HITS=0
           echo "Flawfinder found ${HITS} potential issues (minlevel=${{ inputs.flawfinder_min_level }})"
           echo "hits=$HITS" >> $GITHUB_OUTPUT
 
