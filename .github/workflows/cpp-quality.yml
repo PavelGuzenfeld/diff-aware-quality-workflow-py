@@ -1505,9 +1505,7 @@ jobs:
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}-coverage
-          restore-keys: |
-            ${{ inputs.build_cache_key }}-coverage-
-            ${{ inputs.build_cache_key }}-
+          restore-keys: ${{ inputs.build_cache_key }}-coverage-
 
       - name: Run coverage script
         if: inputs.coverage_script != ''
