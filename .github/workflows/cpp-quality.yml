@@ -1245,6 +1245,7 @@ jobs:
             SETUP_CMD="${{ inputs.source_setup }} && "
           fi
           docker run --rm \
+            --security-opt seccomp=unconfined \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
@@ -1262,6 +1263,7 @@ jobs:
             PACKAGES_ARG="--packages-select ${{ inputs.tsan_packages }}"
           fi
           docker run --rm \
+            --security-opt seccomp=unconfined \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
@@ -1295,6 +1297,7 @@ jobs:
             TSAN_SUPP="suppressions=${{ inputs.source_mount }}/${{ inputs.tsan_suppressions }}"
           fi
           docker run --rm \
+            --security-opt seccomp=unconfined \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1:$TSAN_SUPP" \
