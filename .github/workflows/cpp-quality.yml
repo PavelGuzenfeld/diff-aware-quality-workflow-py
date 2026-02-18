@@ -187,6 +187,22 @@ on:
         type: boolean
         default: false
         description: 'Generate diff-cover markdown report as artifact'
+      select_jobs:
+        type: string
+        default: 'all'
+        description: 'Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder)'
+      base_ref:
+        type: string
+        default: ''
+        description: 'Base branch for diff (fallback when github.base_ref is empty, e.g. workflow_dispatch)'
+      enable_clang_tidy:
+        type: boolean
+        default: true
+        description: 'Enable clang-tidy analysis (on by default for backward compat)'
+      enable_cppcheck:
+        type: boolean
+        default: true
+        description: 'Enable cppcheck analysis (on by default for backward compat)'
 
 permissions:
   actions: read
@@ -198,6 +214,7 @@ permissions:
 jobs:
   clang-tidy:
     name: clang-tidy
+    if: inputs.enable_clang_tidy && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'clang-tidy'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -214,7 +231,7 @@ jobs:
         id: changed
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E "$EXT_PATTERN" || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "No C++ files changed."
@@ -353,6 +370,7 @@ jobs:
 
   cppcheck:
     name: cppcheck
+    if: inputs.enable_cppcheck && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'cppcheck'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -368,7 +386,7 @@ jobs:
         id: changed
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E "$EXT_PATTERN" || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "No C++ files changed."
@@ -479,7 +497,7 @@ jobs:
   clang-format:
     name: clang-format
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.enable_clang_format
+    if: inputs.enable_clang_format && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'clang-format'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -494,7 +512,7 @@ jobs:
         id: changed
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E "$EXT_PATTERN" || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "No C++ files changed."
@@ -599,7 +617,7 @@ jobs:
   doctest-enforce:
     name: doctest enforcement
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.enforce_doctest
+    if: inputs.enforce_doctest && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'doctest'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -610,7 +628,7 @@ jobs:
         id: check
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- \
             | grep -E "$EXT_PATTERN" \
             | grep -iE "${{ inputs.test_file_pattern }}" || true)
 
@@ -694,7 +712,7 @@ jobs:
   file-naming:
     name: file naming
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.enable_file_naming
+    if: inputs.enable_file_naming && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'file-naming'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -738,7 +756,7 @@ jobs:
               done < "$EXCEPTIONS_FILE"
           fi
 
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- || true)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- || true)
 
           # Apply exclusion filter
           if [ -n "$CHANGED_FILES" ] && [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
@@ -849,7 +867,7 @@ jobs:
   cout-ban:
     name: cout/printf ban
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.ban_cout
+    if: inputs.ban_cout && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'cout-ban'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -860,7 +878,7 @@ jobs:
         id: check
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- \
             | grep -E "$EXT_PATTERN" \
             | grep -viE "${{ inputs.test_file_pattern }}" || true)
 
@@ -927,7 +945,7 @@ jobs:
   new-delete-ban:
     name: new/delete ban
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.ban_new
+    if: inputs.ban_new && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'new-delete-ban'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -938,7 +956,7 @@ jobs:
         id: check
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- \
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- \
             | grep -E "$EXT_PATTERN" \
             | grep -viE "${{ inputs.test_file_pattern }}" || true)
 
@@ -1014,7 +1032,7 @@ jobs:
   flawfinder:
     name: flawfinder
     runs-on: ${{ fromJSON(inputs.runner) }}
-    if: inputs.enable_flawfinder
+    if: inputs.enable_flawfinder && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'flawfinder'))
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -1025,7 +1043,7 @@ jobs:
         id: changed
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E "$EXT_PATTERN" || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "No C++ files changed."
@@ -1119,7 +1137,7 @@ jobs:
 
   sanitizer-tests:
     name: ASAN/UBSAN tests
-    if: inputs.enable_sanitizers
+    if: inputs.enable_sanitizers && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'sanitizers'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -1228,7 +1246,7 @@ jobs:
 
   tsan-tests:
     name: TSAN tests
-    if: inputs.enable_tsan
+    if: inputs.enable_tsan && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'tsan'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -1338,7 +1356,7 @@ jobs:
 
   iwyu:
     name: IWYU
-    if: inputs.enable_iwyu
+    if: inputs.enable_iwyu && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'iwyu'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -1355,7 +1373,7 @@ jobs:
         id: changed
         run: |
           EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
-          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }} -- | grep -E "$EXT_PATTERN" || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E "$EXT_PATTERN" || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "No C++ files changed."
@@ -1423,7 +1441,7 @@ jobs:
             SETUP_CMD="${{ inputs.source_setup }} && "
           fi
           docker run --rm \
-            -e GITHUB_BASE_REF=${{ github.base_ref }} \
+            -e GITHUB_BASE_REF=${{ inputs.base_ref || github.base_ref || 'main' }} \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
@@ -1477,7 +1495,7 @@ jobs:
 
   coverage:
     name: Test Coverage
-    if: inputs.enable_coverage
+    if: inputs.enable_coverage && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'coverage'))
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
@@ -1518,7 +1536,7 @@ jobs:
           docker run --rm \
             -e COVERAGE_THRESHOLD=${{ inputs.coverage_threshold }} \
             -e COVERAGE_DIFF_THRESHOLD=${{ inputs.coverage_diff_threshold }} \
-            -e GITHUB_BASE_REF=${{ github.base_ref }} \
+            -e GITHUB_BASE_REF=${{ inputs.base_ref || github.base_ref || 'main' }} \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
@@ -1606,7 +1624,7 @@ jobs:
         run: |
           pip install diff-cover --quiet
           diff-cover coverage.info \
-            --compare-branch="origin/${{ github.base_ref }}" \
+            --compare-branch="origin/${{ inputs.base_ref || github.base_ref || 'main' }}" \
             --fail-under=${{ inputs.coverage_diff_threshold }} \
             --markdown-report diff-cover.md \
             2>&1 | tee diff-cover-output.txt
