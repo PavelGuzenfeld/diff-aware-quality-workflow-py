@@ -203,6 +203,14 @@ on:
         type: boolean
         default: true
         description: 'Enable cppcheck analysis (on by default for backward compat)'
+      cppcheck_inconclusive:
+        type: boolean
+        default: false
+        description: 'Enable cppcheck --inconclusive mode (may produce false positives)'
+      cppcheck_strict:
+        type: boolean
+        default: false
+        description: 'Use --error-exitcode=1 for native cppcheck error handling'
 
 permissions:
   actions: read
@@ -431,7 +439,17 @@ jobs:
         if: steps.changed.outputs.skip == 'false'
         id: cppcheck
         run: |
-          CPPCHECK_ARGS="--enable=warning,style,performance,portability --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr --error-exitcode=0"
+          CPPCHECK_ARGS="--enable=warning,style,performance,portability --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr"
+
+          if [ "${{ inputs.cppcheck_inconclusive }}" = "true" ]; then
+            CPPCHECK_ARGS="$CPPCHECK_ARGS --inconclusive"
+          fi
+
+          if [ "${{ inputs.cppcheck_strict }}" = "true" ]; then
+            CPPCHECK_ARGS="$CPPCHECK_ARGS --error-exitcode=1"
+          else
+            CPPCHECK_ARGS="$CPPCHECK_ARGS --error-exitcode=0"
+          fi
 
           if [ -n "${{ inputs.cppcheck_suppress }}" ] && [ -f "${{ inputs.cppcheck_suppress }}" ]; then
             CPPCHECK_ARGS="$CPPCHECK_ARGS --suppressions-list=${{ inputs.cppcheck_suppress }}"
@@ -461,11 +479,12 @@ jobs:
 
           FILES=$(cat /tmp/changed_cpp_files.txt | tr '\n' ' ')
 
+          CPPCHECK_EXIT=0
           OUTPUT=$(docker run --rm \
             -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
             -w "${{ inputs.source_mount }}" \
             "${{ inputs.docker_image }}" \
-            bash -c "${SETUP_CMD}cppcheck $CPPCHECK_ARGS $INCLUDE_ARGS $FILES" 2>&1 || true)
+            bash -c "${SETUP_CMD}cppcheck $CPPCHECK_ARGS $INCLUDE_ARGS $FILES" 2>&1) || CPPCHECK_EXIT=$?
 
           ERRORS=0
           if [ -n "$OUTPUT" ]; then
@@ -489,7 +508,10 @@ jobs:
 
           echo "errors=$ERRORS" >> $GITHUB_OUTPUT
 
-          if [ "$ERRORS" -gt 0 ]; then
+          if [ "${{ inputs.cppcheck_strict }}" = "true" ] && [ "$CPPCHECK_EXIT" -ne 0 ]; then
+            echo "cppcheck: exited with code $CPPCHECK_EXIT (strict mode)."
+            exit 1
+          elif [ "$ERRORS" -gt 0 ]; then
             echo "cppcheck: $ERRORS error(s) found."
             exit 1
           fi
