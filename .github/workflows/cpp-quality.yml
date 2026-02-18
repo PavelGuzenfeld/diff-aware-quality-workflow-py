@@ -37,8 +37,8 @@ on:
         description: 'C++ standard for cppcheck'
       runner:
         type: string
-        default: 'ubuntu-latest'
-        description: 'Runner label (e.g., self-hosted)'
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
       file_extensions:
         type: string
         default: 'cpp hpp h cc cxx'
@@ -129,7 +129,7 @@ permissions:
 jobs:
   clang-tidy:
     name: clang-tidy
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -284,7 +284,7 @@ jobs:
 
   cppcheck:
     name: cppcheck
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -409,7 +409,7 @@ jobs:
 
   clang-format:
     name: clang-format
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.enable_clang_format
     steps:
       - name: Check out repository
@@ -529,7 +529,7 @@ jobs:
 
   doctest-enforce:
     name: doctest enforcement
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.enforce_doctest
     steps:
       - name: Check out repository
@@ -624,7 +624,7 @@ jobs:
 
   file-naming:
     name: file naming
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.enable_file_naming
     steps:
       - name: Check out repository
@@ -779,7 +779,7 @@ jobs:
 
   cout-ban:
     name: cout/printf ban
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.ban_cout
     steps:
       - name: Check out repository
@@ -857,7 +857,7 @@ jobs:
 
   new-delete-ban:
     name: new/delete ban
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.ban_new
     steps:
       - name: Check out repository
@@ -944,7 +944,7 @@ jobs:
 
   flawfinder:
     name: flawfinder
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     if: inputs.enable_flawfinder
     steps:
       - name: Check out repository
@@ -1050,7 +1050,7 @@ jobs:
 
   summary:
     name: Post Summary
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder]
     if: always() && github.event_name == 'pull_request'
     steps:

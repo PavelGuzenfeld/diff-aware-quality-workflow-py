@@ -37,8 +37,8 @@ on:
         description: 'Minimum diff-quality score (0-100)'
       runner:
         type: string
-        default: 'ubuntu-latest'
-        description: 'Runner label'
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
 
 permissions:
   contents: read
@@ -47,7 +47,7 @@ permissions:
 jobs:
   lint-and-test:
     name: Lint & Test
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -115,7 +115,7 @@ jobs:
 
   summary:
     name: Post Summary
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     needs: [lint-and-test]
     if: always() && github.event_name == 'pull_request'
     steps:
