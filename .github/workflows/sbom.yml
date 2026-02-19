@@ -80,29 +80,10 @@ jobs:
     if: inputs.source_sbom_script != ''
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
-      - name: Debug secrets availability
-        run: |
-          echo "APP_ID length: ${#APP_ID}"
-          echo "APP_KEY length: ${#APP_KEY}"
-        env:
-          APP_ID: ${{ secrets.APP_ID }}
-          APP_KEY: ${{ secrets.APP_PRIVATE_KEY }}
-
-      - name: Generate GitHub App token
-        if: inputs.checkout_submodules != 'false'
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        continue-on-error: true
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           submodules: ${{ inputs.checkout_submodules }}
-          token: ${{ steps.app-token.outputs.token || github.token }}
 
       - name: Generate source SBOM
         run: python3 "${{ inputs.source_sbom_script }}" --output source-sbom.cdx.json
