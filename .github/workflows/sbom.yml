@@ -27,6 +27,14 @@ on:
         type: string
         default: 'false'
         description: 'Checkout submodules for source SBOM (true/false/recursive)'
+      license_policy_file:
+        type: string
+        default: ''
+        description: 'Path to license policy YAML (empty = skip license check)'
+      license_check_script:
+        type: string
+        default: ''
+        description: 'Path to license check Python script in caller repo'
 
 permissions:
   actions: read
@@ -149,10 +157,51 @@ jobs:
           path: results.sarif
           retention-days: 90
 
+  license-check:
+    name: License Check
+    if: always() && inputs.license_check_script != '' && needs.container-sbom.result == 'success'
+    needs: [container-sbom, source-sbom]
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ${{ inputs.license_policy_file }}
+            ${{ inputs.license_check_script }}
+
+      - name: Download container SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: container-sbom
+
+      - name: Download source SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: source-sbom
+        continue-on-error: true
+
+      - name: Run license check
+        id: license-check
+        run: |
+          python3 "${{ inputs.license_check_script }}" \
+            --sbom container-sbom-cdx.json \
+            --source-sbom source-sbom.cdx.json \
+            --policy "${{ inputs.license_policy_file }}" \
+            --output license-report.json
+
+      - name: Upload license report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
+          retention-days: 90
+
   summary:
     name: SBOM Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [container-sbom, source-sbom, vuln-scan]
+    needs: [container-sbom, source-sbom, vuln-scan, license-check]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -163,6 +212,7 @@ jobs:
             const containerSbom = '${{ needs.container-sbom.result }}';
             const sourceSbom = '${{ needs.source-sbom.result }}';
             const vulnScan = '${{ needs.vuln-scan.result }}';
+            const licenseCheck = '${{ needs.license-check.result }}';
 
             const icon = (result) => {
               if (result === 'success') return ':white_check_mark:';
@@ -187,6 +237,10 @@ jobs:
             }
 
             body += `| Grype vulnerability scan | ${icon(vulnScan)} ${label(vulnScan)} |\n`;
+
+            if (licenseCheck && licenseCheck !== 'skipped') {
+              body += `| License compliance | ${icon(licenseCheck)} ${label(licenseCheck)} |\n`;
+            }
 
             const failOn = '${{ inputs.grype_fail_on }}';
             if (failOn) {
