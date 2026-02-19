@@ -71,6 +71,7 @@ jobs:
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
+| [`version-check.yml`](.github/workflows/version-check.yml) | Multi | SemVer validation in package.xml, CMakeLists.txt, pyproject.toml |
 
 ## Workflow Inputs
 
@@ -243,6 +244,17 @@ jobs:
 
 </details>
 
+<details>
+<summary><strong>Version Check Inputs</strong> (3 inputs)</summary>
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
+| `base_ref` | `''` | Base branch for diff (fallback when github.base_ref is empty) |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+
+</details>
+
 ## Full-Featured C++ Example
 
 ```yaml
@@ -334,6 +346,7 @@ Standalone scripts for local development (same logic as CI):
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
+  version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo
   pull-request-feedback.yml PR feedback for this repo

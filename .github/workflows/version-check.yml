@@ -1,0 +1,177 @@
+name: Version Check
+
+on:
+  workflow_call:
+    inputs:
+      exclude_file:
+        type: string
+        default: ''
+        description: 'Path to file listing excluded paths (one per line, # comments)'
+      base_ref:
+        type: string
+        default: ''
+        description: 'Base branch for diff (fallback when github.base_ref is empty)'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
+
+jobs:
+  version-check:
+    name: Version Check
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed version files
+        id: changed
+        run: |
+          BASE="origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- | grep -E '(package\.xml|CMakeLists\.txt|pyproject\.toml)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No version files changed."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "$FILES" > /tmp/changed_version_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed version file(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_version_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Validate versions
+        if: steps.changed.outputs.skip == 'false'
+        id: validate
+        run: |
+          VERSION_RE='^[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$'
+          ERRORS=0
+          CHECKED=0
+          REPORT=""
+
+          while IFS= read -r f || [ -n "$f" ]; do
+            [ -z "$f" ] && continue
+            VER=""
+            TYPE=""
+
+            case "$f" in
+              *package.xml)
+                VER=$(grep -oP '(?<=<version>)[^<]+' "$f" 2>/dev/null || true)
+                TYPE="package.xml"
+                ;;
+              *CMakeLists.txt)
+                VER=$(grep -oP 'project\s*\([^)]*VERSION\s+\K[0-9][^\s)]*' "$f" 2>/dev/null || true)
+                TYPE="CMakeLists.txt"
+                ;;
+              *pyproject.toml)
+                VER=$(grep -oP '^version\s*=\s*"\K[^"]+' "$f" 2>/dev/null || true)
+                TYPE="pyproject.toml"
+                ;;
+            esac
+
+            [ -z "$VER" ] && continue
+            CHECKED=$((CHECKED + 1))
+
+            if echo "$VER" | grep -qE "$VERSION_RE"; then
+              REPORT="${REPORT}| \`${f}\` | \`${VER}\` | valid |\n"
+            else
+              echo "::error file=${f}::Invalid version '${VER}' — must match ${VERSION_RE}"
+              REPORT="${REPORT}| \`${f}\` | \`${VER}\` | **invalid** |\n"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < /tmp/changed_version_files.txt
+
+          echo "checked=$CHECKED" >> "$GITHUB_OUTPUT"
+          echo "errors=$ERRORS" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "report<<EOF"
+            echo -e "$REPORT"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "Found $ERRORS invalid version string(s) out of $CHECKED checked."
+            exit 1
+          fi
+          echo "All $CHECKED version string(s) valid."
+
+      - name: Post or update PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- version-check-report -->';
+            const skip = '${{ steps.changed.outputs.skip }}';
+            const checked = '${{ steps.validate.outputs.checked }}' || '0';
+            const errors = '${{ steps.validate.outputs.errors }}' || '0';
+            const report = `${{ steps.validate.outputs.report }}`;
+
+            let body = marker + '\n## Version Check Report\n\n';
+
+            if (skip === 'true') {
+              body += 'No version files changed in this PR.\n';
+            } else if (checked === '0') {
+              body += 'No version strings found in changed files.\n';
+            } else {
+              const status = errors === '0' ? 'All versions valid' : `${errors} invalid version(s)`;
+              body += `**${status}** (${checked} file(s) checked)\n\n`;
+              body += '| File | Version | Status |\n|------|---------|--------|\n';
+              body += report;
+            }
+
+            body += '\n---\n*Checked `package.xml`, `CMakeLists.txt`, `pyproject.toml` — diff-aware.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
