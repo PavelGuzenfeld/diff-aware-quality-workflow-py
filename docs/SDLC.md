@@ -11,23 +11,36 @@ This document describes the full quality and security process enforced by this t
    clang-format                  clang-tidy (Docker)       Infer scheduled
    clang-tidy                    cppcheck (Docker)         Fuzz corpus runs
    cppcheck                      clang-format
-                                 ruff / flake8
- local scripts                   diff-cover
-   diff-clang-tidy.sh
-   diff-cppcheck.sh            banned pattern checks
-   diff-clang-format.sh          cout/printf ban
-   diff-file-naming.sh           raw new/delete ban
+                                 flawfinder (CWE)
+ local scripts                   ruff / flake8
+   diff-clang-tidy.sh           diff-cover
+   diff-cppcheck.sh
+   diff-clang-format.sh        script & container linting
+   diff-file-naming.sh           ShellCheck (shell scripts)
+                                  Hadolint (Dockerfiles)
+ CMake presets
+   debug-asan                  banned pattern checks
+   debug-tsan                    cout/printf ban
+   release-hardened              raw new/delete ban
                                   gtest/gbenchmark ban
- CMake presets                    snake_case file naming
-   debug-asan
-   debug-tsan                  SAST scanners
-   release-hardened              Semgrep (Python)
+ sanitizer builds                snake_case file naming
+   ASan + UBSan
+   TSan                        runtime analysis
+                                 ASan + UBSan (opt-in)
+                                 TSan (opt-in)
+                                 gcov/lcov coverage (opt-in)
+                                 IWYU (opt-in)
+
+                               SAST scanners
+                                 Semgrep (Python)
                                  CodeQL (C++ & Python)
- sanitizer builds                Infer (C++)
-   ASan + UBSan                  pip-audit (Python)
-   TSan
-                               test coverage
-                                 pytest + diff-cover
+                                 Infer (C++)
+                                 pip-audit (Python)
+
+                               supply chain
+                                 SBOM (Syft + source scan)
+                                 Grype vulnerability scan
+                                 license policy check
 
          git push ──────────> PR opened ──────────> merge
               │                    │                   │
@@ -123,8 +136,14 @@ Only files changed in the PR are checked. Detection uses `git diff --name-only -
 | Bug/style checking | cppcheck | Docker | Always |
 | Code formatting | clang-format | Docker | Opt-in |
 | CWE lexical scan | flawfinder | Host | Opt-in |
+| Shell script linting | ShellCheck | Host | Opt-in |
+| Dockerfile linting | Hadolint | Host | Opt-in |
+| ASan + UBSan | sanitizer build | Docker | Opt-in |
+| Thread safety | TSan | Docker | Opt-in |
+| Code coverage | gcov/lcov + diff-cover | Docker | Opt-in |
+| Include analysis | IWYU | Docker | Opt-in |
 
-clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Flawfinder runs on the host (pure lexical scan, no compilation needed).
+clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Flawfinder, ShellCheck, and Hadolint run on the host (no compilation needed). Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
 
 ### Diff-Aware Linting (Python)
 
@@ -211,6 +230,21 @@ Workflow: [`sast-python.yml`](../.github/workflows/sast-python.yml)
 
 ---
 
+## Phase 3b: SBOM & Supply Chain
+
+Workflow: [`sbom.yml`](../.github/workflows/sbom.yml)
+
+| Check | Tool | What it does |
+|-------|------|-------------|
+| Container SBOM | Syft | Scans Docker image for apt/pip/system packages |
+| Source SBOM | Custom script | Parses CMake FetchContent, .gitmodules, package.xml, pyproject.toml |
+| Vulnerability scan | Grype | Scans merged SBOM against CVE databases |
+| License check | Custom script | Validates dependencies against license policy |
+
+All artifacts (SPDX JSON, CycloneDX JSON, Grype report) are uploaded as GitHub Actions artifacts. Results are posted as a PR summary comment.
+
+---
+
 ## Phase 4: Testing & Hardening
 
 ### Edge Case Checklist
@@ -278,8 +312,10 @@ The `release-hardened` CMake preset enables:
 | Phase | Trigger | Checks |
 |-------|---------|--------|
 | Pre-commit | `git commit` | clang-format, clang-tidy, cppcheck, whitespace, YAML |
-| PR (C++) | Pull request | clang-tidy, cppcheck, clang-format, file naming, banned patterns |
+| PR (C++) | Pull request | clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint, file naming, banned patterns |
+| PR (Runtime) | Pull request | ASan/UBSan, TSan, coverage, IWYU (all opt-in) |
 | PR (Python) | Pull request | ruff/flake8, pytest, diff-cover |
 | PR (SAST) | Pull request | Semgrep, pip-audit, CodeQL (optional) |
+| PR (SBOM) | Pull request | Syft, Grype, source SBOM, license check |
 | Post-merge | Schedule/push | CodeQL, Infer, fuzz corpus runs |
 | Local dev | Manual | Scripts, sanitizer presets, CMake warnings |

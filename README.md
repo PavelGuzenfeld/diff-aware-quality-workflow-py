@@ -5,9 +5,11 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 ## What It Does
 
 - **Diff-aware** — only files changed in the PR are checked; legacy code never blocks merges
-- **C++ quality** — clang-tidy, cppcheck, clang-format inside your Docker image
+- **C++ quality** — clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint inside your Docker image
+- **Runtime analysis** — ASan/UBSan, TSan, gcov/lcov coverage, IWYU (all opt-in)
 - **Python quality** — ruff/flake8 + pytest + diff-cover on changed lines
 - **Security scanning** — Semgrep, CodeQL, Infer, pip-audit
+- **SBOM & supply chain** — Syft container scan, source dependency scan, Grype vulnerability scanning
 - **Banned patterns** — cout/printf, raw new/delete, gtest (all opt-in)
 - **Naming enforcement** — snake_case files and `include/<package_name>/` directories, identifier naming via clang-tidy
 - **Hardening templates** — sanitizer presets, multi-compiler CI, fuzzing, production flags
@@ -59,51 +61,137 @@ jobs:
 | **[SDLC Process](docs/SDLC.md)** | Full lifecycle: pre-commit, PR gates, SAST, testing, hardening |
 | **[Integration Guide](docs/INTEGRATION.md)** | Step-by-step setup for C++ and Python projects |
 | **[Versioning Rules](docs/VERSIONING.md)** | SemVer policy: initial versions, bump rules, git tags |
-| **[Roadmap](docs/ROADMAP.md)** | Planned features: auto Jira tickets from scans, trend dashboard |
+| **[Roadmap](docs/ROADMAP.md)** | Conventions, coding standards, and planned features |
 
 ## Reusable Workflows
 
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
-| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, file naming, banned patterns |
+| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint, sanitizers, TSAN, coverage, IWYU, file naming, banned patterns |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
+| [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
 
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (28 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (56 inputs)</summary>
+
+**Core:**
 
 | Input | Default | Description |
 |-------|---------|-------------|
 | `docker_image` | *required* | Docker image with clang-tidy, cppcheck, and compile_commands.json |
 | `compile_commands_path` | `build` | Path to compile_commands.json inside the container |
 | `source_mount` | `/workspace/src` | Where repo source is mounted inside the container |
-| `clang_tidy_config` | `''` | Path to .clang-tidy config (empty = use repo default) |
-| `cppcheck_suppress` | `''` | Path to cppcheck suppressions file |
-| `cppcheck_includes` | `''` | Space-separated include directories |
-| `cppcheck_include_file` | `''` | Path to file containing include dirs (one per line, `#` comments) |
-| `cppcheck_std` | `c++23` | C++ standard for cppcheck |
-| `enable_clang_format` | `false` | Enable clang-format check |
-| `clang_format_config` | `''` | Path to .clang-format config |
 | `source_setup` | `''` | Shell command to source before tools (e.g., ROS2 setup.bash) |
-| `runner` | `ubuntu-latest` | Runner label |
-| `file_extensions` | `cpp hpp h cc cxx` | File extensions to check |
-| `enforce_doctest` | `false` | Require doctest instead of gtest |
-| `test_file_pattern` | `test` | Grep pattern to identify test files |
-| `enable_file_naming` | `false` | Enable snake_case file naming check |
-| `file_naming_exceptions` | `''` | Path to naming exception regexes |
-| `file_naming_allowed_prefixes` | `_` | Allowed prefixes for file names |
-| `ban_cout` | `false` | Ban cout/cerr/printf in non-test files |
-| `ban_new` | `false` | Ban raw new/delete in non-test files |
-| `clang_tidy_jobs` | `4` | Parallel clang-tidy jobs inside Docker |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+| `file_extensions` | `cpp hpp h cc cxx` | Space-separated C++ file extensions to check |
 | `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
-| `enable_flawfinder` | `false` | Enable flawfinder CWE lexical scan |
-| `flawfinder_min_level` | `2` | Minimum flawfinder finding level (1-5) |
-| `enable_sarif` | `false` | Upload SARIF to GitHub Security tab |
-| `pre_analysis_script` | `''` | Script to run inside Docker before analysis (build compile_commands.json, etc.) |
+| `pre_analysis_script` | `''` | Script to run inside Docker before analysis |
 | `build_cache_key` | `''` | Cache key for build artifacts (empty = no caching) |
 | `build_cache_paths` | `build install` | Space-separated paths to cache |
+| `checkout_submodules` | `false` | Pass to actions/checkout submodules (false, true, recursive) |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder, shellcheck, hadolint) |
+| `base_ref` | `''` | Base branch for diff (fallback when github.base_ref is empty) |
+
+**clang-tidy:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_clang_tidy` | `true` | Enable clang-tidy analysis |
+| `clang_tidy_config` | `''` | Path to .clang-tidy config (empty = use repo default) |
+| `clang_tidy_jobs` | `4` | Parallel clang-tidy jobs inside Docker |
+
+**cppcheck:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_cppcheck` | `true` | Enable cppcheck analysis |
+| `cppcheck_suppress` | `''` | Path to cppcheck suppressions file |
+| `cppcheck_includes` | `''` | Space-separated include directories |
+| `cppcheck_include_file` | `''` | Path to file containing include dirs (one per line) |
+| `cppcheck_std` | `c++23` | C++ standard for cppcheck |
+| `cppcheck_inconclusive` | `false` | Enable --inconclusive mode (may produce false positives) |
+| `cppcheck_strict` | `false` | Use --error-exitcode=1 for native cppcheck error handling |
+
+**clang-format:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_clang_format` | `false` | Enable clang-format check (opt-in) |
+| `clang_format_config` | `''` | Path to .clang-format config |
+
+**Flawfinder:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_flawfinder` | `false` | Enable flawfinder CWE lexical scan (opt-in) |
+| `flawfinder_min_level` | `2` | Minimum flawfinder finding level (1-5) |
+| `enable_sarif` | `false` | Upload SARIF to GitHub Security tab |
+
+**ShellCheck:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_shellcheck` | `false` | Enable ShellCheck for shell scripts (opt-in) |
+| `shellcheck_severity` | `warning` | Minimum severity: error, warning, info, style |
+
+**Hadolint:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_hadolint` | `false` | Enable Hadolint for Dockerfiles (opt-in) |
+| `hadolint_config` | `''` | Path to .hadolint.yaml config file |
+
+**Sanitizers (ASan/UBSan):**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_sanitizers` | `false` | Enable ASan/UBSan test job (opt-in) |
+| `sanitizer_script` | `''` | Script to build+test with sanitizers |
+| `sanitizer_suppressions` | `''` | Path to LSAN suppressions file |
+| `sanitizer_packages` | `''` | Space-separated packages to test (empty = all) |
+
+**ThreadSanitizer:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_tsan` | `false` | Enable TSan test job (opt-in, mutually exclusive with ASan) |
+| `tsan_script` | `''` | Script to build+test with TSan |
+| `tsan_suppressions` | `''` | Path to TSan suppressions file |
+| `tsan_packages` | `''` | Space-separated packages to test with TSan (empty = all) |
+
+**Coverage:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_coverage` | `false` | Enable gcov/lcov coverage reporting (opt-in) |
+| `coverage_script` | `''` | Script to build+test with coverage and collect lcov |
+| `coverage_packages` | `''` | Space-separated packages to measure (empty = all) |
+| `coverage_threshold` | `0` | Minimum overall line coverage % (0 = no threshold) |
+| `coverage_diff_threshold` | `0` | Minimum coverage % for changed lines via diff-cover (0 = disabled) |
+| `coverage_diff_report` | `false` | Generate diff-cover markdown report as artifact |
+
+**IWYU:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_iwyu` | `false` | Enable Include-What-You-Use analysis (opt-in) |
+| `iwyu_script` | `''` | Script to run IWYU analysis |
+| `iwyu_mapping_file` | `''` | Path to IWYU mapping file (.imp) |
+
+**Naming & Banned Patterns:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_file_naming` | `false` | Enable snake_case file naming check (opt-in) |
+| `file_naming_exceptions` | `''` | Path to naming exception regexes |
+| `file_naming_allowed_prefixes` | `_` | Allowed prefixes for file names |
+| `enforce_doctest` | `false` | Require doctest instead of gtest (opt-in) |
+| `test_file_pattern` | `test` | Grep pattern to identify test files |
+| `ban_cout` | `false` | Ban cout/cerr/printf in non-test files (opt-in) |
+| `ban_new` | `false` | Ban raw new/delete in non-test files (opt-in) |
 
 </details>
 
@@ -139,6 +227,22 @@ jobs:
 
 </details>
 
+<details>
+<summary><strong>SBOM Inputs</strong> (8 inputs)</summary>
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `docker_image` | *required* | Docker image to scan |
+| `source_sbom_script` | `''` | Path to source-level SBOM generation script (empty = skip) |
+| `grype_fail_on` | `''` | Fail on severity: "" = report-only, "critical", "high", "medium", "low" |
+| `grype_ignore_file` | `''` | Path to .grype.yaml ignore file |
+| `checkout_submodules` | `false` | Checkout submodules for source SBOM (true/false/recursive) |
+| `license_policy_file` | `''` | Path to license policy YAML (empty = skip license check) |
+| `license_check_script` | `''` | Path to license check Python script in caller repo |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+
+</details>
+
 ## Full-Featured C++ Example
 
 ```yaml
@@ -147,19 +251,47 @@ jobs:
     uses: PavelGuzenfeld/standard/.github/workflows/cpp-quality.yml@main
     with:
       docker_image: ghcr.io/your-org/your-dev-image:latest
-      compile_commands_path: build/your_package
+      compile_commands_path: build
+      source_mount: /workspace/src
+      source_setup: 'source /opt/ros/humble/setup.bash'
+      pre_analysis_script: .github/scripts/pre-analysis.sh
       cppcheck_suppress: cppcheck.suppress
-      cppcheck_include_file: cppcheck.include
-      source_setup: 'source /opt/ros/humble/install/setup.bash'
+      cppcheck_std: c++23
+      cppcheck_strict: true
       enable_clang_format: true
+      enable_flawfinder: true
+      enable_shellcheck: true
+      enable_hadolint: true
+      enable_sanitizers: true
+      sanitizer_script: .github/scripts/sanitizer-tests.sh
+      enable_tsan: true
+      tsan_script: .github/scripts/tsan-tests.sh
+      enable_coverage: true
+      coverage_script: .github/scripts/coverage-tests.sh
+      enable_iwyu: true
+      iwyu_script: .github/scripts/iwyu-analysis.sh
       enforce_doctest: true
       ban_cout: true
       ban_new: true
       enable_file_naming: true
-      runner: self-hosted
+      enable_sarif: true
+      runner: '[\"self-hosted\",\"X64\",\"Linux\"]'
     permissions:
       contents: read
       pull-requests: write
+      security-events: write
+
+  sbom:
+    uses: PavelGuzenfeld/standard/.github/workflows/sbom.yml@main
+    with:
+      docker_image: ghcr.io/your-org/your-dev-image:latest
+      source_sbom_script: .github/scripts/generate_source_sbom.py
+      grype_fail_on: ''
+      license_policy_file: .license-policy.yml
+    permissions:
+      contents: read
+      pull-requests: write
+      packages: read
 ```
 
 ## Configs
@@ -198,9 +330,10 @@ Standalone scripts for local development (same logic as CI):
 
 ```
 .github/workflows/
-  cpp-quality.yml           Reusable C++ quality workflow (clang-tidy, cppcheck, + 5 opt-in checks)
+  cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 15+ opt-in checks)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
+  sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo
   pull-request-feedback.yml PR feedback for this repo
