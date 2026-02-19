@@ -8,7 +8,7 @@ All projects consuming this standard **must** follow Semantic Versioning (SemVer
 
 Every new project, package, library, or component starts at **`0.0.1`**.
 
-- `0.0.1` — not `1.0.0`, not `0.1.0`, not `0.0.0`
+- `0.0.1` or `0.0.0.1` — not `1.0.0`, not `0.1.0`, not `0.0.0`
 - This applies to: ROS2 packages (`package.xml`), CMake projects (`project(... VERSION ...)`), Python packages (`pyproject.toml`), Docker images, Helm charts, and any other versionable artifact
 
 ---
@@ -16,26 +16,43 @@ Every new project, package, library, or component starts at **`0.0.1`**.
 ## Version Format
 
 ```
-MAJOR.MINOR.PATCH[-PRERELEASE]
+major.minor.patch[-prerelease]
+major.minor.patch.tweak[-prerelease]
 ```
+
+3 or 4 numeric segments separated by dots. **Everything lowercase.** Version strings contain only digits, dots, hyphens, and lowercase letters.
+
+### Validation Regex
+
+```
+^[0-9]+(\.[0-9]+){2,3}(-rc\.[0-9]+)?$
+```
+
+For git tags (with `v` prefix):
+
+```
+^v[0-9]+(\.[0-9]+){2,3}(-rc\.[0-9]+)?$
+```
+
+Valid: `0.0.1`, `0.0.0.1`, `1.2.3`, `1.2.3.4`, `1.0.0-rc.1`, `2.0.0-rc.3`
+Invalid: `1.0`, `1.0.0-beta.1`, `1.0.0-RC1`, `1.0.0-alpha.1`
 
 | Segment | Meaning | When to bump |
 |---------|---------|-------------|
-| **MAJOR** | Breaking changes | Public API removed/changed, protocol incompatibility, data format break |
-| **MINOR** | New features | New API added, new capability, backward-compatible behavior change |
-| **PATCH** | Bug fixes | Bug fix, performance improvement, internal refactor, documentation |
+| **major** | Breaking changes | Public API removed/changed, protocol incompatibility, data format break |
+| **minor** | New features | New API added, new capability, backward-compatible behavior change |
+| **patch** | Bug fixes | Bug fix, performance improvement, internal refactor, documentation |
 
-### Pre-release Tags
+### Pre-release Tag
 
-Optional pre-release suffix for work-in-progress:
+The only pre-release tag is **`-rc.N`** (release candidate):
 
-| Tag | Use |
-|-----|-----|
-| `-alpha.N` | Early development, API may change freely |
-| `-beta.N` | Feature-complete, API stable but may have bugs |
-| `-rc.N` | Release candidate, no known issues |
+```
+1.2.0-rc.1
+0.0.3-rc.2
+```
 
-Example: `1.2.0-beta.3`
+No `alpha`, `beta`, or other pre-release tags. Code is either released or a release candidate.
 
 ---
 
@@ -126,3 +143,70 @@ Every version bump should have a corresponding entry in `CHANGELOG.md` (if the p
 ```
 
 Categories: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+
+---
+
+## Enforcement
+
+### Git Tag Validation (CI)
+
+A CI job can validate that git tags match the version regex before allowing a release:
+
+```yaml
+- name: Validate tag format
+  if: startsWith(github.ref, 'refs/tags/v')
+  run: |
+    TAG="${GITHUB_REF#refs/tags/}"
+    if ! echo "$TAG" | grep -qE '^v[0-9]+(\.[0-9]+){2,3}(-rc\.[0-9]+)?$'; then
+      echo "::error::Invalid tag format: $TAG (expected: v0.0.1 or v0.0.0.1)"
+      exit 1
+    fi
+```
+
+### Source File Version Check (CI)
+
+Validate version strings in `package.xml`, `CMakeLists.txt`, and `pyproject.toml` on every PR:
+
+```yaml
+- name: Validate version strings in source files
+  run: |
+    VERSION_RE='^[0-9]+(\.[0-9]+){2,3}(-rc\.[0-9]+)?$'
+    ERRORS=0
+
+    # package.xml
+    for f in $(find . -name 'package.xml' -not -path '*/build/*' -not -path '*/.git/*'); do
+      VER=$(grep -oP '(?<=<version>)[^<]+' "$f" || true)
+      if [ -n "$VER" ] && ! echo "$VER" | grep -qE "$VERSION_RE"; then
+        echo "::error file=$f::Invalid version '$VER' — must match $VERSION_RE"
+        ERRORS=$((ERRORS + 1))
+      fi
+    done
+
+    # CMakeLists.txt project(... VERSION ...)
+    for f in $(find . -name 'CMakeLists.txt' -not -path '*/build/*' -not -path '*/.git/*'); do
+      VER=$(grep -oP 'project\s*\([^)]*VERSION\s+\K[0-9][^\s)]*' "$f" || true)
+      if [ -n "$VER" ] && ! echo "$VER" | grep -qE "$VERSION_RE"; then
+        echo "::error file=$f::Invalid version '$VER' — must match $VERSION_RE"
+        ERRORS=$((ERRORS + 1))
+      fi
+    done
+
+    # pyproject.toml
+    for f in $(find . -name 'pyproject.toml' -not -path '*/build/*' -not -path '*/.git/*'); do
+      VER=$(grep -oP '^version\s*=\s*"\K[^"]+' "$f" || true)
+      if [ -n "$VER" ] && ! echo "$VER" | grep -qE "$VERSION_RE"; then
+        echo "::error file=$f::Invalid version '$VER' — must match $VERSION_RE"
+        ERRORS=$((ERRORS + 1))
+      fi
+    done
+
+    if [ "$ERRORS" -gt 0 ]; then
+      echo "Found $ERRORS invalid version string(s)."
+      exit 1
+    fi
+    echo "All version strings valid."
+```
+
+### Future: Reusable Job
+
+These checks will be added as an opt-in job in `cpp-quality.yml` (like `file-naming` or `shellcheck`) so consumers get version validation automatically.
