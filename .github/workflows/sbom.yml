@@ -1,0 +1,209 @@
+name: SBOM & Vulnerability Scan
+
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        type: string
+        required: true
+        description: 'Docker image to scan (e.g., ghcr.io/org/image:tag)'
+      source_sbom_script:
+        type: string
+        default: ''
+        description: 'Path to source-level SBOM generation script (empty = skip)'
+      grype_fail_on:
+        type: string
+        default: ''
+        description: 'Fail on severity: "" = report-only, "critical", "high", "medium", "low"'
+      grype_ignore_file:
+        type: string
+        default: ''
+        description: 'Path to .grype.yaml ignore file'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
+      checkout_submodules:
+        type: string
+        default: 'false'
+        description: 'Checkout submodules for source SBOM (true/false/recursive)'
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  container-sbom:
+    name: Container SBOM
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Docker image
+        run: docker pull "${{ inputs.docker_image }}"
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ inputs.docker_image }}
+          format: spdx-json
+          output-file: container-sbom-spdx.json
+          upload-artifact: false
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ inputs.docker_image }}
+          format: cyclonedx-json
+          output-file: container-sbom-cdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-sbom
+          path: |
+            container-sbom-spdx.json
+            container-sbom-cdx.json
+          retention-days: 90
+
+  source-sbom:
+    name: Source SBOM
+    if: inputs.source_sbom_script != ''
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Generate source SBOM
+        run: python3 "${{ inputs.source_sbom_script }}" --output source-sbom.cdx.json
+
+      - name: Upload source SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-sbom
+          path: source-sbom.cdx.json
+          retention-days: 90
+
+  vuln-scan:
+    name: Vulnerability Scan
+    needs: container-sbom
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        if: inputs.grype_ignore_file != ''
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: ${{ inputs.grype_ignore_file }}
+
+      - name: Download container SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: container-sbom
+
+      - name: Run Grype vulnerability scan
+        id: grype
+        uses: anchore/scan-action@v6
+        with:
+          sbom: container-sbom-cdx.json
+          fail-build: ${{ inputs.grype_fail_on != '' }}
+          severity-cutoff: ${{ inputs.grype_fail_on || 'negligible' }}
+          output-format: sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Security
+        if: always() && steps.grype.outcome != 'skipped'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+          category: grype-vuln-scan
+        continue-on-error: true
+
+      - name: Upload Grype report
+        if: always() && steps.grype.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-report
+          path: results.sarif
+          retention-days: 90
+
+  summary:
+    name: SBOM Summary
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    needs: [container-sbom, source-sbom, vuln-scan]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- sbom-report -->';
+            const containerSbom = '${{ needs.container-sbom.result }}';
+            const sourceSbom = '${{ needs.source-sbom.result }}';
+            const vulnScan = '${{ needs.vuln-scan.result }}';
+
+            const icon = (result) => {
+              if (result === 'success') return ':white_check_mark:';
+              if (result === 'skipped') return ':next_track_button:';
+              if (result === 'failure') return ':x:';
+              return ':warning:';
+            };
+
+            const label = (result) => {
+              if (result === 'success') return 'passed';
+              if (result === 'skipped') return 'skipped';
+              if (result === 'failure') return 'failed';
+              return result;
+            };
+
+            let body = marker + '\n## SBOM & Vulnerability Report\n\n';
+            body += '| Check | Status |\n|-------|--------|\n';
+            body += `| Container SBOM (SPDX + CycloneDX) | ${icon(containerSbom)} ${label(containerSbom)} |\n`;
+
+            if (sourceSbom && sourceSbom !== 'skipped') {
+              body += `| Source SBOM (CycloneDX) | ${icon(sourceSbom)} ${label(sourceSbom)} |\n`;
+            }
+
+            body += `| Grype vulnerability scan | ${icon(vulnScan)} ${label(vulnScan)} |\n`;
+
+            const failOn = '${{ inputs.grype_fail_on }}';
+            if (failOn) {
+              body += `\n**Vulnerability gate:** blocking on \`${failOn}\` and above\n`;
+            } else {
+              body += '\n**Vulnerability gate:** report-only (not blocking)\n';
+            }
+
+            body += '\n---\n*SBOM artifacts and Grype SARIF available in workflow artifacts. Vulnerabilities visible in the Security tab.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
