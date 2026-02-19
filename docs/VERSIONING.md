@@ -16,8 +16,8 @@ Every new project, package, library, or component starts at **`0.0.1`**.
 ## Version Format
 
 ```
-major.minor.patch[-rc-N]
-major.minor.patch.tweak[-rc-N]
+major.minor.patch[-suffix]
+major.minor.patch.tweak[-suffix]
 ```
 
 3 or 4 numeric segments separated by dots. **Everything lowercase.** Version strings contain only digits, dots, hyphens, and lowercase letters.
@@ -25,17 +25,17 @@ major.minor.patch.tweak[-rc-N]
 ### Validation Regex
 
 ```
-^[0-9]+(\.[0-9]+){2,3}(-rc-[0-9]+)?$
+^[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
 ```
 
 For git tags (with `v` prefix):
 
 ```
-^v[0-9]+(\.[0-9]+){2,3}(-rc-[0-9]+)?$
+^v[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
 ```
 
-Valid: `0.0.1`, `0.0.0.1`, `1.2.3`, `1.2.3.4`, `1.0.0-rc-1`, `2.0.0-rc-3`
-Invalid: `1.0`, `1.0.0-beta-1`, `1.0.0-RC1`, `1.0.0-alpha-1`
+Valid: `0.0.1`, `0.0.0.1`, `1.2.3-rc-1`, `1.2.0-rocx-1234`, `0.0.3-gps-denied-nav`
+Invalid: `1.0`, `1.0.0-RC1`, `1.0.0-Beta.1`, `1.0.0_feature`
 
 | Segment | Meaning | When to bump |
 |---------|---------|-------------|
@@ -43,16 +43,24 @@ Invalid: `1.0`, `1.0.0-beta-1`, `1.0.0-RC1`, `1.0.0-alpha-1`
 | **minor** | New features | New API added, new capability, backward-compatible behavior change |
 | **patch** | Bug fixes | Bug fix, performance improvement, internal refactor, documentation |
 
-### Pre-release Tag
+### Suffixes
 
-The only pre-release tag is **`-rc-N`** (release candidate):
+Two valid suffix types:
 
+**Release candidate** (`-rc-N`):
 ```
 1.2.0-rc-1
 0.0.3-rc-2
 ```
 
-No `alpha`, `beta`, or other pre-release tags. Code is either released or a release candidate.
+**Feature or ticket annotation** (`-name`):
+```
+1.2.0-rocx-1234
+0.0.3-gps-denied-nav
+1.0.0-rc-1-rocx-567
+```
+
+No `alpha`, `beta`, or other pre-release conventions. Code is either released, an rc, or annotated with a feature/ticket.
 
 ---
 
@@ -157,7 +165,7 @@ A CI job can validate that git tags match the version regex before allowing a re
   if: startsWith(github.ref, 'refs/tags/v')
   run: |
     TAG="${GITHUB_REF#refs/tags/}"
-    if ! echo "$TAG" | grep -qE '^v[0-9]+(\.[0-9]+){2,3}(-rc-[0-9]+)?$'; then
+    if ! echo "$TAG" | grep -qE '^v[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$'; then
       echo "::error::Invalid tag format: $TAG (expected: v0.0.1 or v0.0.0.1)"
       exit 1
     fi
@@ -170,7 +178,7 @@ Validate version strings in `package.xml`, `CMakeLists.txt`, and `pyproject.toml
 ```yaml
 - name: Validate version strings in source files
   run: |
-    VERSION_RE='^[0-9]+(\.[0-9]+){2,3}(-rc-[0-9]+)?$'
+    VERSION_RE='^[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$'
     ERRORS=0
 
     # package.xml
