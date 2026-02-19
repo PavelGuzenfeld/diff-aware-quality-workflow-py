@@ -159,7 +159,10 @@ jobs:
 
   license-check:
     name: License Check
-    if: always() && inputs.license_check_script != '' && needs.container-sbom.result == 'success'
+    if: >-
+      always()
+      && (inputs.license_check_script != '' || inputs.license_policy_file != '')
+      && needs.container-sbom.result == 'success'
     needs: [container-sbom, source-sbom]
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
@@ -181,10 +184,291 @@ jobs:
           name: source-sbom
         continue-on-error: true
 
+      - name: Write built-in license checker
+        if: inputs.license_check_script == ''
+        run: |
+          cat > _check_licenses.py << 'PYEOF'
+          #!/usr/bin/env python3
+          """Built-in license compliance checker for CycloneDX SBOMs.
+
+          Reads a CycloneDX JSON SBOM and a YAML license policy, classifies every
+          component license as allowed / conditional / forbidden / unknown, and
+          produces a JSON report.
+
+          Exit codes:
+            0 — no forbidden licenses found
+            1 — forbidden licenses found (or unknown + unknown_action=fail)
+          """
+
+          import argparse
+          import json
+          import sys
+          from pathlib import Path
+
+          try:
+              import yaml
+          except ImportError:
+              yaml = None
+
+
+          # -------------------------------------------------------------------
+          # Minimal YAML parser (flat lists + scalar maps only) — fallback when
+          # PyYAML is not installed.  Supports the subset used by license policy
+          # files.
+          # -------------------------------------------------------------------
+          def _parse_simple_yaml(text: str) -> dict:
+              result: dict = {}
+              current_key = None
+              current_list: list | None = None
+              current_map: dict | None = None
+              map_mode = False
+
+              for raw_line in text.splitlines():
+                  stripped = raw_line.strip()
+                  if not stripped or stripped.startswith("#"):
+                      continue
+
+                  indent = len(raw_line) - len(raw_line.lstrip())
+
+                  # Top-level key
+                  if indent == 0 and ":" in stripped:
+                      # Flush previous
+                      if current_key is not None:
+                          if map_mode and current_map is not None:
+                              result[current_key] = current_map
+                          elif current_list is not None:
+                              result[current_key] = current_list
+                      key, _, value = stripped.partition(":")
+                      current_key = key.strip()
+                      value = value.strip()
+                      if value:
+                          result[current_key] = value
+                          current_key = None
+                          current_list = None
+                          current_map = None
+                          map_mode = False
+                      else:
+                          current_list = []
+                          current_map = {}
+                          map_mode = False
+                      continue
+
+                  # List item
+                  if stripped.startswith("- "):
+                      item = stripped[2:].strip()
+                      if current_list is not None:
+                          current_list.append(item)
+                      continue
+
+                  # Map item (indented key: value)
+                  if ":" in stripped and indent > 0:
+                      key, _, value = stripped.partition(":")
+                      key = key.strip()
+                      value = value.strip()
+                      if current_map is not None:
+                          current_map[key] = value
+                          map_mode = True
+                      continue
+
+              # Flush last
+              if current_key is not None:
+                  if map_mode and current_map is not None:
+                      result[current_key] = current_map
+                  elif current_list is not None:
+                      result[current_key] = current_list
+
+              return result
+
+
+          def load_policy(path: Path) -> dict:
+              text = path.read_text()
+              if yaml is not None:
+                  return yaml.safe_load(text)
+              return _parse_simple_yaml(text)
+
+
+          def load_sbom(path: Path) -> dict:
+              return json.loads(path.read_text())
+
+
+          def normalize_license(lic: str) -> str:
+              """Strip common suffixes/prefixes for fuzzy matching."""
+              return lic.strip()
+
+
+          def extract_licenses(component: dict) -> list[str]:
+              """Extract license identifiers from a CycloneDX component."""
+              licenses = []
+              for entry in component.get("licenses", []):
+                  # SPDX expression (e.g., "MIT AND Apache-2.0")
+                  expr = entry.get("expression")
+                  if expr:
+                      for part in expr.replace("(", "").replace(")", "").split():
+                          if part.upper() not in ("AND", "OR", "WITH"):
+                              licenses.append(normalize_license(part))
+                      continue
+                  # Single license object
+                  lic = entry.get("license", {})
+                  lid = lic.get("id")
+                  if lid:
+                      licenses.append(normalize_license(lid))
+                  elif lic.get("name"):
+                      licenses.append(normalize_license(lic["name"]))
+              return licenses
+
+
+          def classify(license_id: str, policy: dict) -> str:
+              """Classify a license as allowed/conditional/forbidden/unknown."""
+              allowed = set(policy.get("allowed", []))
+              conditional = set(policy.get("conditional", []))
+              forbidden = set(policy.get("forbidden", []))
+
+              if license_id in allowed:
+                  return "allowed"
+              if license_id in conditional:
+                  return "conditional"
+              if license_id in forbidden:
+                  return "forbidden"
+              return "unknown"
+
+
+          def check_sbom(sbom: dict, policy: dict) -> dict:
+              """Check all components in an SBOM against the policy."""
+              results = {
+                  "summary": {"allowed": 0, "conditional": 0, "forbidden": 0, "unknown": 0},
+                  "forbidden": [],
+                  "conditional": [],
+                  "unknown": [],
+              }
+
+              for component in sbom.get("components", []):
+                  name = component.get("name", "???")
+                  version = component.get("version", "???")
+                  lics = extract_licenses(component)
+
+                  if not lics:
+                      lics = ["NOASSERTION"]
+
+                  for lic in lics:
+                      cat = classify(lic, policy)
+                      results["summary"][cat] += 1
+                      entry = {"name": name, "version": version, "license": lic}
+                      if cat == "forbidden":
+                          results["forbidden"].append(entry)
+                      elif cat == "conditional":
+                          results["conditional"].append(entry)
+                      elif cat == "unknown":
+                          results["unknown"].append(entry)
+
+              return results
+
+
+          def apply_source_overrides(source_sbom: dict, policy: dict) -> dict:
+              """Apply source_overrides from policy to source SBOM components."""
+              overrides = policy.get("source_overrides", {})
+              if not overrides:
+                  return source_sbom
+
+              for component in source_sbom.get("components", []):
+                  name = component.get("name", "")
+                  if name in overrides:
+                      lic_id = overrides[name]
+                      component["licenses"] = [{"license": {"id": lic_id}}]
+
+              return source_sbom
+
+
+          def merge_results(a: dict, b: dict) -> dict:
+              """Merge two result dicts (container + source)."""
+              return {
+                  "summary": {
+                      k: a["summary"][k] + b["summary"][k]
+                      for k in ("allowed", "conditional", "forbidden", "unknown")
+                  },
+                  "forbidden": a["forbidden"] + b["forbidden"],
+                  "conditional": a["conditional"] + b["conditional"],
+                  "unknown": a["unknown"] + b["unknown"],
+              }
+
+
+          def main() -> int:
+              parser = argparse.ArgumentParser(description="License compliance checker")
+              parser.add_argument("--sbom", required=True, help="Container CycloneDX JSON SBOM")
+              parser.add_argument("--source-sbom", default="", help="Source CycloneDX JSON SBOM")
+              parser.add_argument("--policy", required=True, help="License policy YAML")
+              parser.add_argument("--output", default="license-report.json", help="Output report")
+              args = parser.parse_args()
+
+              policy_path = Path(args.policy)
+              if not policy_path.exists():
+                  print(f"ERROR: Policy file not found: {args.policy}", file=sys.stderr)
+                  return 1
+
+              sbom_path = Path(args.sbom)
+              if not sbom_path.exists():
+                  print(f"ERROR: SBOM file not found: {args.sbom}", file=sys.stderr)
+                  return 1
+
+              policy = load_policy(policy_path)
+              sbom = load_sbom(sbom_path)
+
+              results = check_sbom(sbom, policy)
+
+              # Source SBOM (optional)
+              if args.source_sbom:
+                  source_path = Path(args.source_sbom)
+                  if source_path.exists():
+                      source_sbom = load_sbom(source_path)
+                      source_sbom = apply_source_overrides(source_sbom, policy)
+                      source_results = check_sbom(source_sbom, policy)
+                      results = merge_results(results, source_results)
+
+              # Write report
+              output_path = Path(args.output)
+              output_path.write_text(json.dumps(results, indent=2) + "\n")
+
+              # Print summary
+              s = results["summary"]
+              print("License check complete:")
+              print(f"  Allowed:     {s['allowed']}")
+              print(f"  Conditional: {s['conditional']}")
+              print(f"  Forbidden:   {s['forbidden']}")
+              print(f"  Unknown:     {s['unknown']}")
+
+              if results["forbidden"]:
+                  print("\nFORBIDDEN licenses found:")
+                  for item in results["forbidden"]:
+                      print(f"  {item['name']} {item['version']}: {item['license']}")
+
+              if results["unknown"]:
+                  print(f"\nUnknown licenses ({len(results['unknown'])}):")
+                  for item in results["unknown"]:
+                      print(f"  {item['name']} {item['version']}: {item['license']}")
+
+              # Exit code
+              if results["forbidden"]:
+                  print("\nFAILED: Forbidden licenses detected")
+                  return 1
+
+              unknown_action = policy.get("unknown_action", "warn")
+              if unknown_action == "fail" and results["unknown"]:
+                  print("\nFAILED: Unknown licenses detected (unknown_action=fail)")
+                  return 1
+
+              print("\nPASSED")
+              return 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PYEOF
+
       - name: Run license check
         id: license-check
         run: |
-          python3 "${{ inputs.license_check_script }}" \
+          SCRIPT="${{ inputs.license_check_script }}"
+          [ -z "$SCRIPT" ] && SCRIPT="_check_licenses.py"
+          python3 "$SCRIPT" \
             --sbom container-sbom-cdx.json \
             --source-sbom source-sbom.cdx.json \
             --policy "${{ inputs.license_policy_file }}" \
