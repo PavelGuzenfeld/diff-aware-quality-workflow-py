@@ -80,8 +80,20 @@ jobs:
     if: inputs.source_sbom_script != ''
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
+      - name: Check app credentials
+        id: check-app
+        run: |
+          if [ -n "$APP_ID" ] && [ -n "$APP_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Generate GitHub App token
-        if: inputs.checkout_submodules != 'false' && inputs.checkout_submodules != ''
+        if: inputs.checkout_submodules != 'false' && steps.check-app.outputs.available == 'true'
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
