@@ -4,14 +4,45 @@
 
 Reusable workflows provide diff-aware quality gates on every PR:
 
+**C++ Static Analysis:**
+
 | Tool | Purpose | Mode |
 |------|---------|------|
 | clang-format | Code formatting | Opt-in, blocking |
 | clang-tidy | CERT + Core Guidelines + bugprone | Blocking (diff-aware) |
 | cppcheck | Value-flow + CWE analysis | Blocking (diff-aware) |
 | Flawfinder | CWE lexical scan | Blocking (threshold=0) |
+| IWYU | Include-What-You-Use analysis | Opt-in, report-only |
+
+**C++ Runtime Analysis:**
+
+| Tool | Purpose | Mode |
+|------|---------|------|
+| ASan/UBSan | Address + undefined behavior sanitizer | Opt-in |
+| TSan | Thread sanitizer | Opt-in |
+| gcov/lcov | Code coverage + diff-cover | Opt-in |
+
+**Script & Container Linting:**
+
+| Tool | Purpose | Mode |
+|------|---------|------|
+| ShellCheck | Shell script linting (`.sh`, `.bash`) | Opt-in, report-only |
+| Hadolint | Dockerfile linting (`Dockerfile*`) | Opt-in, report-only |
+
+**Python:**
+
+| Tool | Purpose | Mode |
+|------|---------|------|
 | Semgrep | Python taint/OWASP | Blocking |
 | pip-audit | Python CVE scanning | Blocking |
+
+**Supply Chain:**
+
+| Tool | Purpose | Mode |
+|------|---------|------|
+| Syft | Container SBOM generation (SPDX + CycloneDX) | Opt-in |
+| Grype | Vulnerability scanning against CVE databases | Opt-in |
+| License check | Dependency license policy validation | Opt-in |
 
 ## Coding Conventions & Whitelisted Patterns
 
@@ -118,7 +149,7 @@ When a finding is a false positive:
 
 Suppressions are reviewed as part of the PR code review.
 
-## Planned: SBOM & Supply Chain Security
+## SBOM & Supply Chain Security
 
 Generate a Software Bill of Materials covering both container and source-level dependencies, with vulnerability scanning.
 
@@ -260,6 +291,13 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | Flawfinder integration | Done | - |
 | PR gate keeping (required checks) | Done | Branch protection rules |
 | Full-codebase scan (local) | Done | Builder container |
-| SBOM generation (Syft + source) | Planned | Docker image |
-| Grype vulnerability scanning | Planned | Merged SBOM |
+| SBOM generation (Syft + source) | Done | Docker image |
+| Grype vulnerability scanning | Done | Merged SBOM |
+| License policy check | Done | SBOM workflow |
+| ShellCheck (shell scripts) | Done | cpp-quality.yml |
+| Hadolint (Dockerfiles) | Done | cpp-quality.yml |
+| ASan/UBSan sanitizer job | Done | cpp-quality.yml |
+| TSan thread sanitizer job | Done | cpp-quality.yml |
+| Code coverage (gcov/lcov) | Done | cpp-quality.yml |
+| IWYU include analysis | Done | cpp-quality.yml |
 | Trend dashboard | Planned | - |
