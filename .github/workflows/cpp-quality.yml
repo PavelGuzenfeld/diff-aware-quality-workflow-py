@@ -190,7 +190,7 @@ on:
       select_jobs:
         type: string
         default: 'all'
-        description: 'Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder)'
+        description: 'Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder, shellcheck, hadolint)'
       base_ref:
         type: string
         default: ''
@@ -211,6 +211,22 @@ on:
         type: boolean
         default: false
         description: 'Use --error-exitcode=1 for native cppcheck error handling'
+      enable_shellcheck:
+        type: boolean
+        default: false
+        description: 'Enable ShellCheck for shell scripts (opt-in)'
+      shellcheck_severity:
+        type: string
+        default: 'warning'
+        description: 'ShellCheck minimum severity: error, warning, info, style'
+      enable_hadolint:
+        type: boolean
+        default: false
+        description: 'Enable Hadolint for Dockerfiles (opt-in)'
+      hadolint_config:
+        type: string
+        default: ''
+        description: 'Path to .hadolint.yaml config file (empty = defaults)'
 
 permissions:
   actions: read
@@ -1158,6 +1174,183 @@ jobs:
           sarif_file: flawfinder.sarif
           category: flawfinder
 
+  shellcheck:
+    name: ShellCheck
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_shellcheck && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'shellcheck'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed shell scripts
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E '\.(sh|bash)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No shell scripts changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_scripts.txt
+            echo "Found $(echo "$FILES" | wc -l) changed script(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_scripts.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Install ShellCheck
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          if ! command -v shellcheck &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          fi
+          shellcheck --version
+
+      - name: Run ShellCheck
+        if: steps.changed.outputs.skip == 'false'
+        id: shellcheck
+        run: |
+          SEVERITY="${{ inputs.shellcheck_severity }}"
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            OUTPUT=$(shellcheck --severity="$SEVERITY" --format=gcc "$file" 2>&1 || true)
+            if [ -n "$OUTPUT" ]; then
+              echo "$OUTPUT"
+              echo "$OUTPUT" | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                ann_line=$(echo "$line" | cut -d: -f2)
+                ann_col=$(echo "$line" | cut -d: -f3)
+                severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+                message=$(echo "$line" | cut -d: -f5-)
+                case "$severity" in
+                  error) echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+                  *)     echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+                esac
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$OUTPUT" | wc -l)))
+            fi
+          done < /tmp/changed_scripts.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "shellcheck: $VIOLATIONS finding(s)."
+            exit 1
+          fi
+
+          echo "shellcheck: no findings."
+
+  hadolint:
+    name: Hadolint
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_hadolint && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'hadolint'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed Dockerfiles
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E '(^|/)Dockerfile' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No Dockerfiles changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_dockerfiles.txt
+            echo "Found $(echo "$FILES" | wc -l) changed Dockerfile(s)."
+          fi
+
+      - name: Install Hadolint
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          HADOLINT_VERSION="v2.12.0"
+          curl -sL "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" -o /tmp/hadolint
+          chmod +x /tmp/hadolint
+          /tmp/hadolint --version
+
+      - name: Run Hadolint
+        if: steps.changed.outputs.skip == 'false'
+        id: hadolint
+        run: |
+          CONFIG_ARG=""
+          if [ -n "${{ inputs.hadolint_config }}" ] && [ -f "${{ inputs.hadolint_config }}" ]; then
+            CONFIG_ARG="--config ${{ inputs.hadolint_config }}"
+          fi
+
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            OUTPUT=$(/tmp/hadolint --no-fail --format=tty $CONFIG_ARG "$file" 2>&1 || true)
+            if [ -n "$OUTPUT" ]; then
+              echo "$OUTPUT"
+              # Parse hadolint tty output: "file:line DLnnnn severity: message"
+              echo "$OUTPUT" | grep -E '^.+:[0-9]+ ' | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                rest=$(echo "$line" | cut -d: -f2-)
+                ann_line=$(echo "$rest" | awk '{print $1}')
+                rule=$(echo "$rest" | awk '{print $2}')
+                severity=$(echo "$rest" | awk '{print $3}' | tr -d ':')
+                message=$(echo "$rest" | cut -d' ' -f4-)
+                case "$severity" in
+                  error) echo "::error file=${ann_file},line=${ann_line}::Hadolint ${rule}: ${message}" ;;
+                  *)     echo "::warning file=${ann_file},line=${ann_line}::Hadolint ${rule}: ${message}" ;;
+                esac
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$OUTPUT" | grep -cE '^.+:[0-9]+ ' || true)))
+            fi
+          done < /tmp/changed_dockerfiles.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "hadolint: $VIOLATIONS finding(s)."
+            exit 1
+          fi
+
+          echo "hadolint: no findings."
+
   sanitizer-tests:
     name: ASAN/UBSAN tests
     if: inputs.enable_sanitizers && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'sanitizers'))
@@ -1666,7 +1859,7 @@ jobs:
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage]
+    needs: [clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, shellcheck, hadolint, sanitizer-tests, tsan-tests, iwyu, coverage]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -1682,6 +1875,8 @@ jobs:
             const coutBan = '${{ needs.cout-ban.result }}';
             const newBan = '${{ needs.new-delete-ban.result }}';
             const flaw = '${{ needs.flawfinder.result }}';
+            const sc = '${{ needs.shellcheck.result }}';
+            const hado = '${{ needs.hadolint.result }}';
             const sanitizer = '${{ needs.sanitizer-tests.result }}';
             const tsan = '${{ needs.tsan-tests.result }}';
             const iwyu = '${{ needs.iwyu.result }}';
@@ -1708,6 +1903,12 @@ jobs:
             }
             if (flaw && flaw !== 'skipped') {
               body += `| flawfinder | ${flaw === 'success' ? 'clean' : 'CWE findings'} |\n`;
+            }
+            if (sc && sc !== 'skipped') {
+              body += `| ShellCheck | ${sc === 'success' ? 'clean' : 'script findings'} |\n`;
+            }
+            if (hado && hado !== 'skipped') {
+              body += `| Hadolint | ${hado === 'success' ? 'clean' : 'Dockerfile findings'} |\n`;
             }
             if (sanitizer && sanitizer !== 'skipped') {
               body += `| ASAN/UBSAN | ${sanitizer === 'success' ? 'clean' : 'sanitizer errors'} |\n`;
