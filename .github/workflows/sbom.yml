@@ -80,20 +80,22 @@ jobs:
     if: inputs.source_sbom_script != ''
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
-      - name: Generate GitHub App token
-        id: app-token
-        if: inputs.checkout_submodules != 'false'
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-        continue-on-error: true
-
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ steps.app-token.outputs.token || github.token }}
-          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Checkout submodules (best-effort)
+        if: inputs.checkout_submodules != 'false'
+        run: |
+          git submodule init
+          git submodule foreach --quiet 'echo $name' | while read -r mod; do
+            echo "::group::$mod"
+            if git submodule update --depth 1 -- "$mod" 2>&1; then
+              echo "OK: $mod"
+            else
+              echo "::warning::Skipping inaccessible submodule: $mod"
+            fi
+            echo "::endgroup::"
+          done
 
       - name: Generate source SBOM
         run: python3 "${{ inputs.source_sbom_script }}" --output source-sbom.cdx.json
