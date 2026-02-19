@@ -59,7 +59,7 @@ jobs:
         run: docker pull "${{ inputs.docker_image }}"
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.22.2
         with:
           image: ${{ inputs.docker_image }}
           format: spdx-json
@@ -67,7 +67,7 @@ jobs:
           upload-artifact: false
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@v0.22.2
         with:
           image: ${{ inputs.docker_image }}
           format: cyclonedx-json
@@ -171,7 +171,7 @@ jobs:
         with:
           sparse-checkout: |
             ${{ inputs.license_policy_file }}
-            ${{ inputs.license_check_script }}
+            ${{ inputs.license_check_script || inputs.license_policy_file }}
 
       - name: Download container SBOM
         uses: actions/download-artifact@v4

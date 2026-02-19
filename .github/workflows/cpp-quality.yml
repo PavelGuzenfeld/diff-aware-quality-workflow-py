@@ -1148,6 +1148,7 @@ jobs:
           path: |
             flawfinder.sarif
             flawfinder.txt
+          retention-days: 90
 
       - name: Upload SARIF
         if: always() && steps.changed.outputs.skip == 'false' && inputs.enable_sarif

@@ -31,9 +31,13 @@ on:
         type: boolean
         default: true
         description: 'Run pytest and collect coverage (disable for projects with external test deps like ROS2)'
+      base_ref:
+        type: string
+        default: ''
+        description: 'Base branch for diff comparison (falls back to github.base_ref, then main)'
       fail_under:
-        type: number
-        default: 100
+        type: string
+        default: '100'
         description: 'Minimum diff-quality score (0-100)'
       runner:
         type: string
@@ -82,7 +86,7 @@ jobs:
             VIOLATIONS="ruff.check"
           fi
           diff-quality --violations="$VIOLATIONS" \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=origin/${{ inputs.base_ref || github.base_ref || 'main' }} \
             --fail-under=${{ inputs.fail_under }}
         continue-on-error: true
 
@@ -98,11 +102,11 @@ jobs:
         run: |
           echo "DIFF_COVER_REPORT<<EOF" >> $GITHUB_ENV
           diff-cover coverage.xml \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=origin/${{ inputs.base_ref || github.base_ref || 'main' }} \
             --markdown-report=diff-cover.md || true
           cat diff-cover.md >> $GITHUB_ENV 2>/dev/null || \
             diff-cover coverage.xml \
-              --compare-branch=origin/${{ github.base_ref }} >> $GITHUB_ENV
+              --compare-branch=origin/${{ inputs.base_ref || github.base_ref || 'main' }} >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
         continue-on-error: true
 
