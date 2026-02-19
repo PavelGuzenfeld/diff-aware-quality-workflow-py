@@ -58,6 +58,7 @@ jobs:
 |----------|------------|
 | **[SDLC Process](docs/SDLC.md)** | Full lifecycle: pre-commit, PR gates, SAST, testing, hardening |
 | **[Integration Guide](docs/INTEGRATION.md)** | Step-by-step setup for C++ and Python projects |
+| **[Versioning Rules](docs/VERSIONING.md)** | SemVer policy: initial versions, bump rules, git tags |
 | **[Roadmap](docs/ROADMAP.md)** | Planned features: auto Jira tickets from scans, trend dashboard |
 
 ## Reusable Workflows
@@ -211,6 +212,7 @@ tests/
 docs/
   SDLC.md                   Full software development lifecycle document
   INTEGRATION.md            Step-by-step integration guide
+  VERSIONING.md             SemVer policy and bump rules
 AGENTS.md                   AI agent instructions for contributing to this repo
 src/calculator.py           Python demo module
 ```
