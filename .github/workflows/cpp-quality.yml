@@ -211,6 +211,22 @@ on:
         type: boolean
         default: false
         description: 'Use --error-exitcode=1 for native cppcheck error handling'
+      enable_shellcheck:
+        type: boolean
+        default: false
+        description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
+      shellcheck_severity:
+        type: string
+        default: 'warning'
+        description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
+      enable_hadolint:
+        type: boolean
+        default: false
+        description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
+      hadolint_config:
+        type: string
+        default: ''
+        description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
 
 permissions:
   actions: read
