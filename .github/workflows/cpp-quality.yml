@@ -211,6 +211,7 @@ on:
         type: boolean
         default: false
         description: 'Use --error-exitcode=1 for native cppcheck error handling'
+
 permissions:
   actions: read
   contents: read
