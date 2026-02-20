@@ -1,0 +1,391 @@
+name: Infrastructure Lint
+
+on:
+  workflow_call:
+    inputs:
+      enable_shellcheck:
+        type: boolean
+        default: false
+        description: 'Enable ShellCheck for shell scripts (opt-in)'
+      shellcheck_severity:
+        type: string
+        default: 'warning'
+        description: 'ShellCheck minimum severity: error, warning, info, style'
+      enable_hadolint:
+        type: boolean
+        default: false
+        description: 'Enable Hadolint for Dockerfiles (opt-in)'
+      hadolint_config:
+        type: string
+        default: ''
+        description: 'Path to .hadolint.yaml config file (empty = defaults)'
+      enable_cmake_lint:
+        type: boolean
+        default: false
+        description: 'Enable cmake-lint for CMake files (opt-in)'
+      cmake_lint_config:
+        type: string
+        default: ''
+        description: 'Path to .cmake-format.yaml config file (empty = defaults)'
+      exclude_file:
+        type: string
+        default: ''
+        description: 'Path to file listing excluded paths (one per line, # comments)'
+      base_ref:
+        type: string
+        default: ''
+        description: 'Base branch for diff (fallback when github.base_ref is empty)'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
+      select_jobs:
+        type: string
+        default: 'all'
+        description: 'Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint)'
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_shellcheck && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'shellcheck'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed shell scripts
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E '\.(sh|bash)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No shell scripts changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_scripts.txt
+            echo "Found $(echo "$FILES" | wc -l) changed script(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_scripts.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Install ShellCheck
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          if ! command -v shellcheck &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          fi
+          shellcheck --version
+
+      - name: Run ShellCheck
+        if: steps.changed.outputs.skip == 'false'
+        id: shellcheck
+        run: |
+          SEVERITY="${{ inputs.shellcheck_severity }}"
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            OUTPUT=$(shellcheck --severity="$SEVERITY" --format=gcc "$file" 2>&1 || true)
+            if [ -n "$OUTPUT" ]; then
+              echo "$OUTPUT"
+              echo "$OUTPUT" | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                ann_line=$(echo "$line" | cut -d: -f2)
+                ann_col=$(echo "$line" | cut -d: -f3)
+                severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+                message=$(echo "$line" | cut -d: -f5-)
+                case "$severity" in
+                  error) echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+                  *)     echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+                esac
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$OUTPUT" | wc -l)))
+            fi
+          done < /tmp/changed_scripts.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "shellcheck: $VIOLATIONS finding(s)."
+            exit 1
+          fi
+
+          echo "shellcheck: no findings."
+
+  hadolint:
+    name: Hadolint
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_hadolint && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'hadolint'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed Dockerfiles
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E '(^|/)Dockerfile' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No Dockerfiles changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_dockerfiles.txt
+            echo "Found $(echo "$FILES" | wc -l) changed Dockerfile(s)."
+          fi
+
+      - name: Install Hadolint
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          HADOLINT_VERSION="v2.12.0"
+          curl -sL "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" -o /tmp/hadolint
+          chmod +x /tmp/hadolint
+          /tmp/hadolint --version
+
+      - name: Run Hadolint
+        if: steps.changed.outputs.skip == 'false'
+        id: hadolint
+        run: |
+          CONFIG_ARG=""
+          if [ -n "${{ inputs.hadolint_config }}" ] && [ -f "${{ inputs.hadolint_config }}" ]; then
+            CONFIG_ARG="--config ${{ inputs.hadolint_config }}"
+          fi
+
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            OUTPUT=$(/tmp/hadolint --no-fail --format=tty $CONFIG_ARG "$file" 2>&1 || true)
+            if [ -n "$OUTPUT" ]; then
+              echo "$OUTPUT"
+              # Parse hadolint tty output: "file:line DLnnnn severity: message"
+              echo "$OUTPUT" | grep -E '^.+:[0-9]+ ' | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                rest=$(echo "$line" | cut -d: -f2-)
+                ann_line=$(echo "$rest" | awk '{print $1}')
+                rule=$(echo "$rest" | awk '{print $2}')
+                severity=$(echo "$rest" | awk '{print $3}' | tr -d ':')
+                message=$(echo "$rest" | cut -d' ' -f4-)
+                case "$severity" in
+                  error) echo "::error file=${ann_file},line=${ann_line}::Hadolint ${rule}: ${message}" ;;
+                  *)     echo "::warning file=${ann_file},line=${ann_line}::Hadolint ${rule}: ${message}" ;;
+                esac
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$OUTPUT" | grep -cE '^.+:[0-9]+ ' || true)))
+            fi
+          done < /tmp/changed_dockerfiles.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "hadolint: $VIOLATIONS finding(s)."
+            exit 1
+          fi
+
+          echo "hadolint: no findings."
+
+  cmake-lint:
+    name: cmake-lint
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_cmake_lint && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'cmake-lint'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed CMake files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- | grep -E '(CMakeLists\.txt|\.cmake)$' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No CMake files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_cmake_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed CMake file(s)."
+          fi
+
+      - name: Filter excluded paths
+        if: steps.changed.outputs.skip == 'false' && inputs.exclude_file != ''
+        run: |
+          EXCLUDE_FILE="${{ inputs.exclude_file }}"
+          FILE_LIST="/tmp/changed_cmake_files.txt"
+          if [ -f "$EXCLUDE_FILE" ] && [ -f "$FILE_LIST" ]; then
+            PATTERNS=()
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%%#*}"; line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              PATTERNS+=("$line")
+            done < "$EXCLUDE_FILE"
+            if [ ${#PATTERNS[@]} -gt 0 ]; then
+              TEMP=$(mktemp)
+              while IFS= read -r fp || [ -n "$fp" ]; do
+                [ -z "$fp" ] && continue
+                excl=false
+                for p in "${PATTERNS[@]}"; do
+                  [[ "$fp" == "$p"* ]] && excl=true && break
+                done
+                [ "$excl" = false ] && echo "$fp"
+              done < "$FILE_LIST" > "$TEMP"
+              mv "$TEMP" "$FILE_LIST"
+              echo "After exclusion filter: $(wc -l < "$FILE_LIST") file(s) remaining."
+            fi
+            if [ ! -s "$FILE_LIST" ]; then
+              echo "All changed files are in excluded paths."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Install cmake-lint
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          python3 -m pip install --user cmakelang 2>/dev/null || \
+            (sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip && python3 -m pip install --user cmakelang)
+          export PATH="$HOME/.local/bin:$PATH"
+          cmake-lint --version
+
+      - name: Run cmake-lint
+        if: steps.changed.outputs.skip == 'false'
+        id: cmake-lint
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          CONFIG_ARG=""
+          if [ -n "${{ inputs.cmake_lint_config }}" ] && [ -f "${{ inputs.cmake_lint_config }}" ]; then
+            CONFIG_ARG="--config-files ${{ inputs.cmake_lint_config }}"
+          fi
+
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            OUTPUT=$(cmake-lint $CONFIG_ARG "$file" 2>&1 || true)
+            if [ -n "$OUTPUT" ]; then
+              echo "$OUTPUT"
+              echo "$OUTPUT" | grep -E '^.+:[0-9]+' | while IFS= read -r line; do
+                ann_file=$(echo "$line" | cut -d: -f1)
+                ann_line=$(echo "$line" | cut -d: -f2)
+                message=$(echo "$line" | cut -d: -f3-)
+                echo "::warning file=${ann_file},line=${ann_line}::cmake-lint:${message}"
+              done
+              VIOLATIONS=$((VIOLATIONS + $(echo "$OUTPUT" | grep -cE '^.+:[0-9]+' || true)))
+            fi
+          done < /tmp/changed_cmake_files.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "cmake-lint: $VIOLATIONS finding(s)."
+            exit 1
+          fi
+
+          echo "cmake-lint: no findings."
+
+  summary:
+    name: Post Summary
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    needs: [shellcheck, hadolint, cmake-lint]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Post or update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- infra-lint-report -->';
+            const sc = '${{ needs.shellcheck.result }}';
+            const hado = '${{ needs.hadolint.result }}';
+            const cmake = '${{ needs.cmake-lint.result }}';
+
+            const icon = (result) => {
+              if (result === 'success') return 'clean';
+              if (result === 'skipped') return 'skipped';
+              return 'findings';
+            };
+
+            let rows = [];
+            if (sc && sc !== 'skipped') {
+              rows.push(`| ShellCheck | ${icon(sc)} |`);
+            }
+            if (hado && hado !== 'skipped') {
+              rows.push(`| Hadolint | ${icon(hado)} |`);
+            }
+            if (cmake && cmake !== 'skipped') {
+              rows.push(`| cmake-lint | ${icon(cmake)} |`);
+            }
+
+            if (rows.length === 0) return;
+
+            let body = marker + '\n## Infrastructure Lint Report\n\n';
+            body += '| Tool | Status |\n|------|--------|\n';
+            body += rows.join('\n') + '\n';
+            body += '\n---\n*Only files changed in this PR were checked.*';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }

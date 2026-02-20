@@ -5,7 +5,8 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 ## What It Does
 
 - **Diff-aware** — only files changed in the PR are checked; legacy code never blocks merges
-- **C++ quality** — clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint inside your Docker image
+- **C++ quality** — clang-tidy, cppcheck, clang-format, flawfinder inside your Docker image
+- **Infrastructure lint** — ShellCheck, Hadolint, cmake-lint (no Docker image needed)
 - **Runtime analysis** — ASan/UBSan, TSan, gcov/lcov coverage, IWYU (all opt-in)
 - **Python quality** — ruff/flake8 + pytest + diff-cover on changed lines
 - **Security scanning** — Semgrep, CodeQL, Infer, pip-audit
@@ -67,7 +68,8 @@ jobs:
 
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
-| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint, sanitizers, TSAN, coverage, IWYU, file naming, banned patterns |
+| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, sanitizers, TSAN, coverage, IWYU, file naming, banned patterns |
+| [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files) |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
@@ -76,7 +78,7 @@ jobs:
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (56 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (52 inputs)</summary>
 
 **Core:**
 
@@ -93,7 +95,7 @@ jobs:
 | `build_cache_key` | `''` | Cache key for build artifacts (empty = no caching) |
 | `build_cache_paths` | `build install` | Space-separated paths to cache |
 | `checkout_submodules` | `false` | Pass to actions/checkout submodules (false, true, recursive) |
-| `select_jobs` | `all` | Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder, shellcheck, hadolint) |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder) |
 | `base_ref` | `''` | Base branch for diff (fallback when github.base_ref is empty) |
 
 **clang-tidy:**
@@ -130,20 +132,6 @@ jobs:
 | `enable_flawfinder` | `false` | Enable flawfinder CWE lexical scan (opt-in) |
 | `flawfinder_min_level` | `2` | Minimum flawfinder finding level (1-5) |
 | `enable_sarif` | `false` | Upload SARIF to GitHub Security tab |
-
-**ShellCheck:**
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `enable_shellcheck` | `false` | Enable ShellCheck for shell scripts (opt-in) |
-| `shellcheck_severity` | `warning` | Minimum severity: error, warning, info, style |
-
-**Hadolint:**
-
-| Input | Default | Description |
-|-------|---------|-------------|
-| `enable_hadolint` | `false` | Enable Hadolint for Dockerfiles (opt-in) |
-| `hadolint_config` | `''` | Path to .hadolint.yaml config file |
 
 **Sanitizers (ASan/UBSan):**
 
@@ -193,6 +181,24 @@ jobs:
 | `test_file_pattern` | `test` | Grep pattern to identify test files |
 | `ban_cout` | `false` | Ban cout/cerr/printf in non-test files (opt-in) |
 | `ban_new` | `false` | Ban raw new/delete in non-test files (opt-in) |
+
+</details>
+
+<details>
+<summary><strong>Infra Lint Inputs</strong> (10 inputs)</summary>
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_shellcheck` | `false` | Enable ShellCheck for shell scripts (opt-in) |
+| `shellcheck_severity` | `warning` | Minimum severity: error, warning, info, style |
+| `enable_hadolint` | `false` | Enable Hadolint for Dockerfiles (opt-in) |
+| `hadolint_config` | `''` | Path to .hadolint.yaml config file |
+| `enable_cmake_lint` | `false` | Enable cmake-lint for CMake files (opt-in) |
+| `cmake_lint_config` | `''` | Path to .cmake-format.yaml config file |
+| `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
+| `base_ref` | `''` | Base branch for diff |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint) |
 
 </details>
 
@@ -272,8 +278,6 @@ jobs:
       cppcheck_strict: true
       enable_clang_format: true
       enable_flawfinder: true
-      enable_shellcheck: true
-      enable_hadolint: true
       enable_sanitizers: true
       sanitizer_script: .github/scripts/sanitizer-tests.sh
       enable_tsan: true
@@ -342,7 +346,8 @@ Standalone scripts for local development (same logic as CI):
 
 ```
 .github/workflows/
-  cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 15+ opt-in checks)
+  cpp-quality.yml           Reusable C++ quality workflow (52 inputs, 13+ opt-in checks)
+  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
