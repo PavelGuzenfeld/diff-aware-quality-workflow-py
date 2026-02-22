@@ -779,6 +779,7 @@ jobs:
               '^__main__\.py$'
               '^__pycache__$'
               '^py\.typed$'
+              '^[A-Z][A-Z_-]*\.md$'
           )
 
           SNAKE_CASE='^[a-z][a-z0-9_]*$'

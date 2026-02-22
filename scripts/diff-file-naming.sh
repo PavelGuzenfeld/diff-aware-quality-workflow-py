@@ -46,6 +46,7 @@ BUILTIN_EXEMPT_PATTERNS=(
     '^__main__\.py$'
     '^__pycache__$'
     '^py\.typed$'
+    '^[A-Z][A-Z_-]*\.md$'          # ALL-CAPS markdown files (TESTING.md, SECURITY.md, etc.)
 )
 
 # Built-in exception path prefixes (matched against full path)
