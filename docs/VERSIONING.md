@@ -28,14 +28,14 @@ major.minor.patch.tweak[-suffix]
 ^[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
 ```
 
-For git tags (with `v` or `qa_` prefix):
+For git tags (with `v` prefix):
 
 ```
-^(v|qa_)[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
+^v[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
 ```
 
-Valid: `0.0.1`, `0.0.0.1`, `1.2.3-rc-1`, `1.2.0-rocx-1234`, `0.0.3-gps-denied-nav`, `v0.0.1`, `qa_0.0.1`, `qa_1.2.3-rc-1`
-Invalid: `1.0`, `1.0.0-RC1`, `1.0.0-Beta.1`, `1.0.0_feature`, `0.0.0`
+Valid: `0.0.1`, `0.0.0.1`, `1.2.3-rc-1`, `1.2.0-rocx-1234`, `0.0.3-gps-denied-nav`
+Invalid: `1.0`, `1.0.0-RC1`, `1.0.0-Beta.1`, `1.0.0_feature`
 
 | Segment | Meaning | When to bump |
 |---------|---------|-------------|
@@ -134,7 +134,6 @@ While `MAJOR` is `0`, the project is in initial development:
 ## Git Tags
 
 - Tags use the `v` prefix: `v0.0.1`, `v1.2.3`
-- QA build tags use the `qa_` prefix: `qa_0.0.1`, `qa_1.2.3-rc-1`
 - Every release **must** have a corresponding git tag
 - Tags are immutable — never delete or move a published tag
 - Annotated tags preferred: `git tag -a v0.0.1 -m "Initial release"`
@@ -163,11 +162,11 @@ A CI job can validate that git tags match the version regex before allowing a re
 
 ```yaml
 - name: Validate tag format
-  if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/qa_')
+  if: startsWith(github.ref, 'refs/tags/v')
   run: |
     TAG="${GITHUB_REF#refs/tags/}"
-    if ! echo "$TAG" | grep -qE '^(v|qa_)[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$'; then
-      echo "::error::Invalid tag format: $TAG (expected: v0.0.1, qa_0.0.1, or v0.0.0.1)"
+    if ! echo "$TAG" | grep -qE '^v[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$'; then
+      echo "::error::Invalid tag format: $TAG (expected: v0.0.1 or v0.0.0.1)"
       exit 1
     fi
 ```
@@ -216,6 +215,6 @@ Validate version strings in `package.xml`, `CMakeLists.txt`, and `pyproject.toml
     echo "All version strings valid."
 ```
 
-### Reusable Workflow
+### Future: Reusable Job
 
-Version validation is available as a standalone reusable workflow: [`version-check.yml`](../.github/workflows/version-check.yml). See the [README](../README.md) for usage.
+These checks will be added as an opt-in job in `cpp-quality.yml` (like `file-naming` or `shellcheck`) so consumers get version validation automatically.
