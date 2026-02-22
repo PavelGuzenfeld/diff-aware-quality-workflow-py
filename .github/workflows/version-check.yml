@@ -130,13 +130,18 @@ jobs:
       - name: Post or update PR comment
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          VC_SKIP: ${{ steps.changed.outputs.skip }}
+          VC_CHECKED: ${{ steps.validate.outputs.checked }}
+          VC_ERRORS: ${{ steps.validate.outputs.errors }}
+          VC_REPORT: ${{ steps.validate.outputs.report }}
         with:
           script: |
             const marker = '<!-- version-check-report -->';
-            const skip = '${{ steps.changed.outputs.skip }}';
-            const checked = '${{ steps.validate.outputs.checked }}' || '0';
-            const errors = '${{ steps.validate.outputs.errors }}' || '0';
-            const report = `${{ steps.validate.outputs.report }}`;
+            const skip = process.env.VC_SKIP || '';
+            const checked = process.env.VC_CHECKED || '0';
+            const errors = process.env.VC_ERRORS || '0';
+            const report = process.env.VC_REPORT || '';
 
             let body = marker + '\n## Version Check Report\n\n';
 

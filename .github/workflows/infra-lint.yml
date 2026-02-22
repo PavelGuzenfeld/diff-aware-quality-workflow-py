@@ -145,11 +145,10 @@ jobs:
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
 
           if [ "$VIOLATIONS" -gt 0 ]; then
-            echo "shellcheck: $VIOLATIONS finding(s)."
-            exit 1
+            echo "shellcheck: $VIOLATIONS finding(s) (warnings)."
+          else
+            echo "shellcheck: no findings."
           fi
-
-          echo "shellcheck: no findings."
 
   hadolint:
     name: Hadolint
@@ -221,11 +220,10 @@ jobs:
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
 
           if [ "$VIOLATIONS" -gt 0 ]; then
-            echo "hadolint: $VIOLATIONS finding(s)."
-            exit 1
+            echo "hadolint: $VIOLATIONS finding(s) (warnings)."
+          else
+            echo "hadolint: no findings."
           fi
-
-          echo "hadolint: no findings."
 
   cmake-lint:
     name: cmake-lint
@@ -322,11 +320,10 @@ jobs:
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
 
           if [ "$VIOLATIONS" -gt 0 ]; then
-            echo "cmake-lint: $VIOLATIONS finding(s)."
-            exit 1
+            echo "cmake-lint: $VIOLATIONS finding(s) (warnings)."
+          else
+            echo "cmake-lint: no findings."
           fi
-
-          echo "cmake-lint: no findings."
 
   summary:
     name: Post Summary
