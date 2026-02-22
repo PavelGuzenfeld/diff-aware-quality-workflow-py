@@ -87,6 +87,17 @@ CPPCHECK_SUPPRESS=cppcheck.suppress ./scripts/diff-cppcheck.sh origin/main
 
 # file naming convention check
 ./scripts/diff-file-naming.sh origin/main naming-exceptions.txt
+
+# IWYU on changed files (non-blocking)
+./scripts/diff-iwyu.sh origin/main build
+```
+
+### Hook Installer
+
+As an alternative to manual `pre-commit install`, use the installer script:
+
+```bash
+./scripts/install-hooks.sh
 ```
 
 ### CMake Presets for Sanitizer Builds

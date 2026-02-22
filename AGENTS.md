@@ -10,25 +10,37 @@ This repo provides reusable GitHub Actions workflows for diff-aware C++ and Pyth
 
 ```
 .github/workflows/
-  cpp-quality.yml           Reusable C++ quality workflow (20 inputs, 7 jobs)
-  python-quality.yml        Reusable Python quality workflow (8 inputs)
-  sast-python.yml           Reusable Python SAST workflow (8 inputs)
+  cpp-quality.yml           Reusable C++ quality workflow (52 inputs, 13+ opt-in checks)
+  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint)
+  python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
+  sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
+  sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
+  version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo (multi-version Python)
   pull-request-feedback.yml PR feedback for this repo
 scripts/
   diff-clang-tidy.sh        Diff-aware clang-tidy runner
-  diff-clang-format.sh      Diff-aware clang-format runner
   diff-cppcheck.sh          Diff-aware cppcheck runner
+  diff-clang-format.sh      Diff-aware clang-format runner
   diff-file-naming.sh       Diff-aware snake_case naming check
-  check-repo-structure.sh   Validate repo directory structure
-configs/                    Drop-in configs and CI templates for consuming projects
+  diff-iwyu.sh              Diff-aware Include-What-You-Use runner
+  generate-workflow.sh       Generate workflow YAML files for consuming repos
+  generate-agents-md.sh      Generate tailored AGENTS.md for consuming repos
+  generate-baseline.sh       Generate suppression/baseline files
+  generate-badges.sh         Generate README badge markdown
+  install-hooks.sh           Install git pre-commit hooks
+  check-repo-structure.sh    Validate repo directory structure
+  filter-excludes.sh         Filter file lists against exclusion patterns
+configs/                    Drop-in configs, CI templates, and agent instructions (15 files)
 tests/
   test_patterns.sh          Pattern validation tests (109 tests, bash)
   test_calculator.py        Python demo tests (pytest)
 docs/
   SDLC.md                   Full software development lifecycle document
   INTEGRATION.md            Step-by-step integration guide
+  VERSIONING.md             SemVer policy and bump rules
+  ROADMAP.md                Conventions, coding standards, and planned features
 src/calculator.py           Python demo module
 ```
 
@@ -65,10 +77,20 @@ Follow this pattern (every existing check follows it):
 
 ### Script Conventions
 
-- Scripts take `base_ref` as the first argument (e.g., `origin/main`)
+Two script families:
+
+**`diff-*` scripts** — diff-aware analysis:
+- Take `base_ref` as the first argument (e.g., `origin/main`)
 - Changed files detected with: `git diff --name-only --diff-filter=ACMR "$base_ref"...HEAD`
 - Exit 0 for clean, exit 1 for violations
 - Test files are excluded from banned-pattern checks
+
+**`generate-*` scripts** — setup generators:
+- Generate scaffolding files for consuming repos (workflows, configs, baselines, badges)
+- Idempotent — safe to re-run
+- Write output to stdout or to files in the current directory
+
+**Utilities** — `check-repo-structure.sh` validates directory layout, `filter-excludes.sh` filters file lists against exclusion patterns.
 
 ## Test Conventions
 
@@ -94,15 +116,17 @@ When adding tests: add a new numbered section, don't modify existing sections.
 
 ## Documentation Sync
 
-These three documents must stay consistent:
+These documents must stay consistent:
 
 | Document | Scope |
 |----------|-------|
-| `README.md` | Workflow inputs, configs table, project structure, quick-start examples |
-| `docs/INTEGRATION.md` | Step-by-step setup instructions, troubleshooting |
+| `README.md` | Workflow inputs, configs table, scripts table, project structure, quick-start examples |
+| `docs/INTEGRATION.md` | Step-by-step setup instructions, generator scripts, troubleshooting |
 | `docs/SDLC.md` | Lifecycle phases (pre-commit, PR gate, SAST, hardening) |
+| `docs/ROADMAP.md` | Timeline of features, coding conventions |
+| `configs/AGENTS.md` | Template for consuming repos — local verification commands, setup scripts |
 
-When adding a check: update all three. When adding a config: update README configs table and INTEGRATION copy instructions.
+When adding a check: update all relevant docs. When adding a script: add to README scripts table, AGENTS.md project structure, and any relevant docs.
 
 ## Don't
 

@@ -146,10 +146,29 @@ Run these before pushing to avoid CI failures:
 ./scripts/diff-cppcheck.sh origin/main
 ./scripts/diff-clang-format.sh origin/main "cpp hpp h"
 ./scripts/diff-file-naming.sh origin/main naming-exceptions.txt
+./scripts/diff-iwyu.sh origin/main build
 
 # Python
 ruff check src/ tests/
 pytest --cov=src tests/
+```
+
+### Setup Scripts
+
+Generator scripts to bootstrap quality tooling in your repo:
+
+```bash
+# Generate .github/workflows/ YAML files
+./scripts/generate-workflow.sh
+
+# Install git pre-commit hooks
+./scripts/install-hooks.sh
+
+# Generate suppression/baseline files for incremental adoption
+./scripts/generate-baseline.sh
+
+# Generate README badge markdown
+./scripts/generate-badges.sh
 ```
 
 ## Customization

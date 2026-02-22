@@ -49,6 +49,33 @@ jobs:
 
 ---
 
+## Automated Setup
+
+Use the generator scripts to bootstrap quality tooling in your repo:
+
+```bash
+# 1. Generate .github/workflows/ YAML files
+./scripts/generate-workflow.sh
+
+# 2. Generate a tailored AGENTS.md for AI coding agents
+./scripts/generate-agents-md.sh
+
+# 3. Install git pre-commit hooks
+./scripts/install-hooks.sh
+
+# 4. Generate suppression/baseline files for incremental adoption
+./scripts/generate-baseline.sh
+
+# 5. Generate README badge markdown
+./scripts/generate-badges.sh
+```
+
+These scripts are idempotent — safe to re-run as you enable more checks.
+
+For manual step-by-step setup, continue below.
+
+---
+
 ## Full C++ Setup
 
 ### 1. Docker Image Requirements
@@ -195,7 +222,13 @@ Edit the "Opt-in" section to match which checks your project has enabled. This t
 
 ### 6. Add Pre-commit Hooks
 
-Copy the template and install:
+**Option A — Use the installer script** (recommended):
+
+```bash
+./scripts/install-hooks.sh
+```
+
+**Option B — Manual setup:**
 
 ```bash
 cp configs/.pre-commit-config.yaml .pre-commit-config.yaml
@@ -501,6 +534,6 @@ with:
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).
 
-- [C++ inputs](../README.md#c-inputs) (25 inputs)
+- [C++ inputs](../README.md#c-inputs) (52 inputs)
 - [Python inputs](../README.md#python-inputs) (8 inputs)
 - [Python SAST inputs](../README.md#python-sast-inputs) (8 inputs)

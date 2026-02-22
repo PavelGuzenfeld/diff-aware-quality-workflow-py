@@ -300,4 +300,10 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | TSan thread sanitizer job | Done | cpp-quality.yml |
 | Code coverage (gcov/lcov) | Done | cpp-quality.yml |
 | IWYU include analysis | Done | cpp-quality.yml |
+| Local IWYU script (diff-iwyu.sh) | Done | cpp-quality.yml |
+| Pre-commit hook installer (install-hooks.sh) | Done | - |
+| Baseline/suppression generator (generate-baseline.sh) | Done | - |
+| Workflow YAML generator (generate-workflow.sh) | Done | - |
+| README badge generator (generate-badges.sh) | Done | - |
+| AGENTS.md generator (generate-agents-md.sh) | Done | - |
 | Trend dashboard | Planned | - |

@@ -332,13 +332,54 @@ jobs:
 
 ## Scripts
 
-Standalone scripts for local development (same logic as CI):
+### Diff-Aware Checks
+
+Run the same logic as CI, only on files changed vs a base branch:
+
+| Script | Purpose |
+|--------|---------|
+| `diff-clang-tidy.sh` | clang-tidy on changed files |
+| `diff-cppcheck.sh` | cppcheck on changed files |
+| `diff-clang-format.sh` | clang-format on changed files |
+| `diff-file-naming.sh` | snake_case naming on changed files |
+| `diff-iwyu.sh` | Include-What-You-Use on changed files |
 
 ```bash
 ./scripts/diff-clang-tidy.sh origin/main build "cpp hpp h"
 ./scripts/diff-cppcheck.sh origin/main
 ./scripts/diff-clang-format.sh origin/main "cpp hpp h"
 ./scripts/diff-file-naming.sh origin/main naming-exceptions.txt
+./scripts/diff-iwyu.sh origin/main build
+```
+
+### Setup Generators
+
+Generate project scaffolding from the standard:
+
+| Script | Purpose |
+|--------|---------|
+| `generate-workflow.sh` | Generate `.github/workflows/` YAML files |
+| `generate-agents-md.sh` | Generate tailored `AGENTS.md` for your repo |
+| `generate-baseline.sh` | Generate suppression/baseline files for incremental adoption |
+| `generate-badges.sh` | Generate README badge markdown |
+| `install-hooks.sh` | Install git pre-commit hooks |
+
+```bash
+./scripts/generate-workflow.sh
+./scripts/generate-agents-md.sh
+./scripts/generate-baseline.sh
+./scripts/generate-badges.sh
+./scripts/install-hooks.sh
+```
+
+### Utilities
+
+| Script | Purpose |
+|--------|---------|
+| `check-repo-structure.sh` | Validate repo directory structure against a template |
+| `filter-excludes.sh` | Filter file lists against exclusion patterns |
+
+```bash
 ./scripts/check-repo-structure.sh configs/repo-structure-ros2.txt .
 ```
 
@@ -355,7 +396,19 @@ Standalone scripts for local development (same logic as CI):
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo
   pull-request-feedback.yml PR feedback for this repo
-scripts/                    Standalone diff-aware scripts for local use
+scripts/
+  diff-clang-tidy.sh        Diff-aware clang-tidy runner
+  diff-cppcheck.sh          Diff-aware cppcheck runner
+  diff-clang-format.sh      Diff-aware clang-format runner
+  diff-file-naming.sh       Diff-aware snake_case naming check
+  diff-iwyu.sh              Diff-aware Include-What-You-Use runner
+  generate-workflow.sh       Generate workflow YAML files
+  generate-agents-md.sh      Generate tailored AGENTS.md
+  generate-baseline.sh       Generate suppression/baseline files
+  generate-badges.sh         Generate README badge markdown
+  install-hooks.sh           Install git pre-commit hooks
+  check-repo-structure.sh    Validate repo directory structure
+  filter-excludes.sh         Filter file lists against exclusion patterns
 configs/                    Drop-in configs, CI templates, and agent instructions (15 files)
 tests/
   test_patterns.sh          Pattern validation tests (109 tests)
@@ -364,6 +417,7 @@ docs/
   SDLC.md                   Full software development lifecycle document
   INTEGRATION.md            Step-by-step integration guide
   VERSIONING.md             SemVer policy and bump rules
+  ROADMAP.md                Conventions, coding standards, and planned features
 AGENTS.md                   AI agent instructions for contributing to this repo
 src/calculator.py           Python demo module
 ```
