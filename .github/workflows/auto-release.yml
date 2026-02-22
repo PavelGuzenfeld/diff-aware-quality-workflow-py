@@ -26,19 +26,21 @@ jobs:
         run: |
           # Find latest semver tag
           LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          FIRST_RELEASE=false
           if [ -z "$LAST_TAG" ]; then
-            LAST_TAG="v0.0.0"
-            echo "No existing tags found, starting from v0.0.0"
+            FIRST_RELEASE=true
+            echo "No existing tags found — first release will be v0.0.1"
           else
             echo "Latest tag: $LAST_TAG"
           fi
           echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "first_release=$FIRST_RELEASE" >> "$GITHUB_OUTPUT"
 
           # Get commits since last tag
-          if git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
-            COMMITS=$(git log "$LAST_TAG"..HEAD --oneline)
-          else
+          if [ "$FIRST_RELEASE" = "true" ]; then
             COMMITS=$(git log --oneline)
+          else
+            COMMITS=$(git log "$LAST_TAG"..HEAD --oneline)
           fi
 
           if [ -z "$COMMITS" ]; then
@@ -47,7 +49,7 @@ jobs:
             exit 0
           fi
 
-          echo "Commits since $LAST_TAG:"
+          echo "Commits since ${LAST_TAG:-beginning}:"
           echo "$COMMITS"
 
           # Determine bump level from commit messages
@@ -67,6 +69,16 @@ jobs:
         if: steps.bump.outputs.skip != 'true'
         id: version
         run: |
+          FIRST_RELEASE="${{ steps.bump.outputs.first_release }}"
+
+          # Per versioning rules: first release is always v0.0.1
+          if [ "$FIRST_RELEASE" = "true" ]; then
+            NEXT="v0.0.1"
+            echo "First release: $NEXT"
+            echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           LAST_TAG="${{ steps.bump.outputs.last_tag }}"
           BUMP="${{ steps.bump.outputs.bump }}"
 
