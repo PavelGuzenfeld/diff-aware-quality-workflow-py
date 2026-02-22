@@ -80,6 +80,8 @@ For manual step-by-step setup, continue below.
 
 ### 1. Docker Image Requirements
 
+> **Important:** All C++ quality checks and tests must run inside your Docker dev container — both in CI and locally. Never run clang-tidy, cppcheck, or builds on the host machine. Host tool versions and headers may differ, producing incorrect results.
+
 The workflow runs tools inside your Docker image. It must have:
 
 - **clang-tidy** (version 14+ recommended)

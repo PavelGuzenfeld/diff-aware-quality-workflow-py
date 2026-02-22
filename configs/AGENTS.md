@@ -138,10 +138,10 @@ Run locally before pushing:
 
 ## Local Verification
 
-Run these before pushing to avoid CI failures:
+**All C++ checks and tests must run inside the project's Docker dev container — never on the host machine.** Tools (clang-tidy, cppcheck, compilers) and headers exist only inside the container. Host versions may differ and produce incorrect results.
 
 ```bash
-# C++ (inside your Docker dev container)
+# Enter your dev container first, then run:
 ./scripts/diff-clang-tidy.sh origin/main build "cpp hpp h"
 ./scripts/diff-cppcheck.sh origin/main
 ./scripts/diff-clang-format.sh origin/main "cpp hpp h"

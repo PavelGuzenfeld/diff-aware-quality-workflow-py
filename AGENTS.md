@@ -128,8 +128,17 @@ These documents must stay consistent:
 
 When adding a check: update all relevant docs. When adding a script: add to README scripts table, AGENTS.md project structure, and any relevant docs.
 
+## Local Testing Rule
+
+**All C++ verification must run inside the project's Docker dev container — never on the host machine.** Host tool versions (clang-tidy, cppcheck, compilers, headers) may differ from what CI uses, producing false results. The Docker container is the single source of truth.
+
+- Run diff-aware scripts, builds, and tests inside the container
+- Search for dependencies and headers inside the container (not on the host filesystem)
+- Only source code (volume-mounted) may be browsed/edited on the host
+
 ## Don't
 
+- Don't run C++ quality checks or tests on the host — always use the Docker dev container
 - Don't change workflow input defaults from `false` to `true` — opt-in checks must stay opt-in
 - Don't add Python dependencies to the C++ workflow — it runs inside the caller's Docker image
 - Don't break backward compatibility on workflow inputs — existing callers must not break

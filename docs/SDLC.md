@@ -73,9 +73,11 @@ Install: `pip install pre-commit && pre-commit install`
 
 ### Local Scripts
 
-Run the same diff-aware checks that CI uses:
+Run the same diff-aware checks that CI uses. **All C++ scripts and tests must run inside the project's Docker dev container**, not on the host — this ensures tools and headers match CI exactly.
 
 ```bash
+# Inside your Docker dev container:
+
 # clang-tidy on changed files
 ./scripts/diff-clang-tidy.sh origin/main build "cpp hpp h"
 
