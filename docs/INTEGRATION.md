@@ -80,13 +80,15 @@ For manual step-by-step setup, continue below.
 
 ### 1. Docker Image Requirements
 
-> **Important:** All C++ quality checks and tests must run inside your Docker dev container — both in CI and locally. Never run clang-tidy, cppcheck, or builds on the host machine. Host tool versions and headers may differ, producing incorrect results.
+> **Important:** All C++ quality checks and tests must run inside your Docker dev container — both in CI and locally. Never install tools or dependencies on the host machine. The Docker image is the single source of truth; every CI check must be reproducible locally by running the same script inside the container.
 
-The workflow runs tools inside your Docker image. It must have:
+The workflow runs tools inside your Docker image. It must have all dependencies needed for both CI and local development:
 
 - **clang-tidy** (version 14+ recommended)
 - **cppcheck** (version 2.10+ recommended)
 - **clang-format** (if `enable_clang_format: true`)
+- **cmake** and build toolchain (compilers, linker)
+- **Project dependencies** (libraries, headers, ROS2 packages, etc.)
 - **compile_commands.json** pre-generated at the path specified by `compile_commands_path`
 
 The repo source gets volume-mounted into the container at `source_mount` (default: `/workspace/src`).

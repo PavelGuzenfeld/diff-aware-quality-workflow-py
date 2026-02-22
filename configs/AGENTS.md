@@ -138,7 +138,7 @@ Run locally before pushing:
 
 ## Local Verification
 
-**All C++ checks and tests must run inside the project's Docker dev container — never on the host machine.** Tools (clang-tidy, cppcheck, compilers) and headers exist only inside the container. Host versions may differ and produce incorrect results.
+**All C++ checks and tests must run inside the project's Docker dev container — never on the host machine.** The Docker image must contain every dependency needed to reproduce CI locally: compilers, clang-tidy, cppcheck, clang-format, cmake, project libraries, and headers. Never install these on the host. Every CI check must be reproducible by running the same script inside the container.
 
 ```bash
 # Enter your dev container first, then run:

@@ -130,11 +130,13 @@ When adding a check: update all relevant docs. When adding a script: add to READ
 
 ## Local Testing Rule
 
-**All C++ verification must run inside the project's Docker dev container — never on the host machine.** Host tool versions (clang-tidy, cppcheck, compilers, headers) may differ from what CI uses, producing false results. The Docker container is the single source of truth.
+**All C++ verification must run inside the project's Docker dev container — never on the host machine.** The Docker image must contain every tool and dependency needed to reproduce CI locally: compilers, clang-tidy, cppcheck, clang-format, cmake, IWYU, project dependencies, and headers. Never install these on the host. The container is the single source of truth.
 
 - Run diff-aware scripts, builds, and tests inside the container
+- Install all dependencies (apt packages, libraries, headers) in the Docker image — not on the host
 - Search for dependencies and headers inside the container (not on the host filesystem)
 - Only source code (volume-mounted) may be browsed/edited on the host
+- Every CI check must be reproducible locally by running the same script inside the container
 
 ## Don't
 

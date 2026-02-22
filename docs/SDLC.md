@@ -73,7 +73,7 @@ Install: `pip install pre-commit && pre-commit install`
 
 ### Local Scripts
 
-Run the same diff-aware checks that CI uses. **All C++ scripts and tests must run inside the project's Docker dev container**, not on the host — this ensures tools and headers match CI exactly.
+Run the same diff-aware checks that CI uses. **All C++ scripts and tests must run inside the project's Docker dev container**, not on the host. The Docker image must contain all tools and dependencies so every CI check is reproducible locally.
 
 ```bash
 # Inside your Docker dev container:
