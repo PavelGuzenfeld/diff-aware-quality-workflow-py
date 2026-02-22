@@ -247,6 +247,12 @@ Confirm `.github/workflows/` contains the quality workflow for your language(s).
 
 Full setup instructions: see `INTEGRATION.md`.
 
+## Git & PR Rules
+
+- **No AI attribution** — never add "Generated with Claude Code", "Co-Authored-By", or similar AI-generated footers to commit messages, PR descriptions, or any content
+- **Conventional commits** — use `feat:`, `fix:`, `feat!:`, `BREAKING CHANGE:` prefixes (drives auto-release versioning)
+- **Versioning** — first release is always `v0.0.1`, see `docs/VERSIONING.md`
+
 ## SDLC Process
 
 The standard supports a 4-phase Software Development Lifecycle:

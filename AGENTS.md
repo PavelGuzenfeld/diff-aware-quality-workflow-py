@@ -138,6 +138,12 @@ When adding a check: update all relevant docs. When adding a script: add to READ
 - Only source code (volume-mounted) may be browsed/edited on the host
 - Every CI check must be reproducible locally by running the same script inside the container
 
+## Git & PR Rules
+
+- **No AI attribution** — never add "Generated with Claude Code", "Co-Authored-By", or similar AI-generated footers to commit messages, PR descriptions, or any content
+- **Conventional commits** — use `feat:`, `fix:`, `feat!:`, `BREAKING CHANGE:` prefixes (drives auto-release versioning)
+- **Versioning** — first release is always `v0.0.1`, see `docs/VERSIONING.md`
+
 ## Don't
 
 - Don't run C++ quality checks or tests on the host — always use the Docker dev container
@@ -147,3 +153,4 @@ When adding a check: update all relevant docs. When adding a script: add to READ
 - Don't use `actions/checkout` inside reusable workflows — the caller handles checkout
 - Don't modify existing test sections in `test_patterns.sh` — add new sections instead
 - Don't hardcode paths — use workflow inputs for all paths
+- Don't add AI attribution footers to commits, PRs, or code comments
