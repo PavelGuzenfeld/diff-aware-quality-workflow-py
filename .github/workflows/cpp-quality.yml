@@ -1799,41 +1799,48 @@ jobs:
             const iwyu = '${{ needs.iwyu.result }}';
             const coverage = '${{ needs.coverage.result }}';
 
-            let body = marker + '\n## C++ Quality Report\n\n';
-            body += '| Tool | Status |\n|------|--------|\n';
-            body += `| clang-tidy | ${tidy === 'success' || tidy === 'skipped' ? 'clean' : 'issues found'} |\n`;
-            body += `| cppcheck | ${check === 'success' || check === 'skipped' ? 'clean' : 'issues found'} |\n`;
+            const icon = (r) => {
+              if (r === 'success') return '✅';
+              if (r === 'skipped') return '⏭️';
+              if (r === 'failure') return '❌';
+              return '⚠️';
+            };
+
+            let body = marker + '\n## C++ Quality Scoreboard\n\n';
+            body += '| Check | Result |\n|:------|:------:|\n';
+            body += `| clang-tidy | ${icon(tidy)} ${tidy === 'success' || tidy === 'skipped' ? 'clean' : 'issues found'} |\n`;
+            body += `| cppcheck | ${icon(check)} ${check === 'success' || check === 'skipped' ? 'clean' : 'issues found'} |\n`;
             if (format && format !== 'skipped') {
-              body += `| clang-format | ${format === 'success' ? 'clean' : 'formatting issues'} |\n`;
+              body += `| clang-format | ${icon(format)} ${format === 'success' ? 'clean' : 'formatting issues'} |\n`;
             }
             if (doctest && doctest !== 'skipped') {
-              body += `| doctest enforcement | ${doctest === 'success' ? 'clean' : 'banned framework found'} |\n`;
+              body += `| doctest enforcement | ${icon(doctest)} ${doctest === 'success' ? 'clean' : 'banned framework found'} |\n`;
             }
             if (naming && naming !== 'skipped') {
-              body += `| file naming | ${naming === 'success' ? 'clean' : 'naming violations'} |\n`;
+              body += `| file naming | ${icon(naming)} ${naming === 'success' ? 'clean' : 'naming violations'} |\n`;
             }
             if (coutBan && coutBan !== 'skipped') {
-              body += `| cout/printf ban | ${coutBan === 'success' ? 'clean' : 'banned I/O found'} |\n`;
+              body += `| cout/printf ban | ${icon(coutBan)} ${coutBan === 'success' ? 'clean' : 'banned I/O found'} |\n`;
             }
             if (newBan && newBan !== 'skipped') {
-              body += `| new/delete ban | ${newBan === 'success' ? 'clean' : 'raw new/delete found'} |\n`;
+              body += `| new/delete ban | ${icon(newBan)} ${newBan === 'success' ? 'clean' : 'raw new/delete found'} |\n`;
             }
             if (flaw && flaw !== 'skipped') {
-              body += `| flawfinder | ${flaw === 'success' ? 'clean' : 'CWE findings'} |\n`;
+              body += `| flawfinder | ${icon(flaw)} ${flaw === 'success' ? 'clean' : 'CWE findings'} |\n`;
             }
             if (sanitizer && sanitizer !== 'skipped') {
-              body += `| ASAN/UBSAN | ${sanitizer === 'success' ? 'clean' : 'sanitizer errors'} |\n`;
+              body += `| ASAN/UBSAN | ${icon(sanitizer)} ${sanitizer === 'success' ? 'clean' : 'sanitizer errors'} |\n`;
             }
             if (tsan && tsan !== 'skipped') {
-              body += `| TSAN | ${tsan === 'success' ? 'clean' : 'thread-safety errors'} |\n`;
+              body += `| TSAN | ${icon(tsan)} ${tsan === 'success' ? 'clean' : 'thread-safety errors'} |\n`;
             }
             if (iwyu && iwyu !== 'skipped') {
-              body += `| IWYU | ${iwyu === 'success' ? 'clean' : 'unnecessary includes found'} |\n`;
+              body += `| IWYU | ${icon(iwyu)} ${iwyu === 'success' ? 'clean' : 'unnecessary includes found'} |\n`;
             }
             if (coverage && coverage !== 'skipped') {
-              body += `| Coverage | ${coverage === 'success' ? 'thresholds met' : 'below threshold'} |\n`;
+              body += `| Coverage | ${icon(coverage)} ${coverage === 'success' ? 'thresholds met' : 'below threshold'} |\n`;
             }
-            body += '\n---\n*Only files changed in this PR were checked.*';
+            body += '\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · Only changed files checked</sub>';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,

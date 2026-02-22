@@ -130,20 +130,27 @@ jobs:
             const audit = '${{ needs.pip-audit.result }}';
             const codeql = '${{ needs.codeql.result }}';
 
-            let body = marker + '\n## Python SAST Report\n\n';
-            body += '| Scanner | Status |\n|---------|--------|\n';
+            const icon = (r) => {
+              if (r === 'success') return '✅';
+              if (r === 'skipped') return '⏭️';
+              if (r === 'failure') return '❌';
+              return '⚠️';
+            };
+
+            let body = marker + '\n## Python SAST Scoreboard\n\n';
+            body += '| Check | Result |\n|:------|:------:|\n';
 
             if (semgrep && semgrep !== 'skipped') {
-              body += `| Semgrep | ${semgrep === 'success' ? 'no findings' : 'findings reported'} |\n`;
+              body += `| Semgrep | ${icon(semgrep)} ${semgrep === 'success' ? 'no findings' : 'findings reported'} |\n`;
             }
             if (audit && audit !== 'skipped') {
-              body += `| pip-audit | ${audit === 'success' ? 'no known CVEs' : 'vulnerabilities found'} |\n`;
+              body += `| pip-audit | ${icon(audit)} ${audit === 'success' ? 'no known CVEs' : 'vulnerabilities found'} |\n`;
             }
             if (codeql && codeql !== 'skipped') {
-              body += `| CodeQL | ${codeql === 'success' ? 'no findings' : 'findings reported'} |\n`;
+              body += `| CodeQL | ${icon(codeql)} ${codeql === 'success' ? 'no findings' : 'findings reported'} |\n`;
             }
 
-            body += '\n---\n*See the Security tab for detailed SARIF results.*';
+            body += '\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · See the Security tab for detailed SARIF results</sub>';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,

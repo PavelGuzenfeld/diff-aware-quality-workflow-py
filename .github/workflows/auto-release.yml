@@ -1,0 +1,109 @@
+name: Auto Release
+
+on:
+  workflow_call:
+    inputs:
+      default_bump:
+        type: string
+        default: 'patch'
+        description: 'Default bump when no conventional commit prefix detected'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          # Find latest semver tag
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            LAST_TAG="v0.0.0"
+            echo "No existing tags found, starting from v0.0.0"
+          else
+            echo "Latest tag: $LAST_TAG"
+          fi
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+
+          # Get commits since last tag
+          if git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
+            COMMITS=$(git log "$LAST_TAG"..HEAD --oneline)
+          else
+            COMMITS=$(git log --oneline)
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            echo "No new commits since $LAST_TAG"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Commits since $LAST_TAG:"
+          echo "$COMMITS"
+
+          # Determine bump level from commit messages
+          BUMP="${{ inputs.default_bump }}"
+
+          if echo "$COMMITS" | grep -qiE 'BREAKING CHANGE:|^[a-f0-9]+ (feat|fix|refactor|chore|docs|style|perf|test|build|ci)(\(.+\))?!:'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -qiE '^[a-f0-9]+ feat(\(.+\))?:'; then
+            BUMP="minor"
+          fi
+
+          echo "Bump level: $BUMP"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate next version
+        if: steps.bump.outputs.skip != 'true'
+        id: version
+        run: |
+          LAST_TAG="${{ steps.bump.outputs.last_tag }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+
+          # Strip v prefix and split
+          VER="${LAST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VER"
+
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "Next version: $NEXT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          gh release create "$NEXT" --generate-notes --title "$NEXT"

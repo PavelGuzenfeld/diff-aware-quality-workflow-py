@@ -534,6 +534,58 @@ with:
 
 ---
 
+## Auto-Release Setup
+
+The `auto-release.yml` reusable workflow auto-versions your project on every push to `main` using conventional commit prefixes. It creates an annotated git tag and a GitHub Release with auto-generated notes.
+
+### 1. Add the workflow
+
+Create `.github/workflows/release.yml`:
+
+```yaml
+name: Release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: PavelGuzenfeld/standard/.github/workflows/auto-release.yml@main
+```
+
+### 2. Use conventional commit prefixes
+
+The workflow scans commits since the last `v*` tag and picks the highest bump:
+
+| Prefix | Example | Bump |
+|--------|---------|------|
+| `feat!:` or `BREAKING CHANGE:` | `feat!: redesign API` | **major** |
+| `feat:` or `feat(scope):` | `feat(auth): add OAuth` | **minor** |
+| Everything else | `fix: null pointer`, `docs: update README` | **patch** (default) |
+
+If no `v*` tag exists, the first release starts from `v0.0.1`.
+
+### 3. Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `default_bump` | `patch` | Default bump when no conventional commit prefix is detected |
+
+### How it works
+
+1. Finds the latest semver tag (`git tag -l 'v*' --sort=-v:refname`)
+2. Scans commit messages since that tag for conventional prefixes
+3. Calculates the next version (major/minor/patch)
+4. Creates an annotated git tag and pushes it
+5. Creates a GitHub Release with auto-generated notes
+
+No commits are made to `main` (avoids infinite loops). The version of record is the git tag.
+
+---
+
 ## Workflow Inputs Reference
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).

@@ -340,29 +340,37 @@ jobs:
             const hado = '${{ needs.hadolint.result }}';
             const cmake = '${{ needs.cmake-lint.result }}';
 
-            const icon = (result) => {
-              if (result === 'success') return 'clean';
-              if (result === 'skipped') return 'skipped';
-              return 'findings';
+            const icon = (r) => {
+              if (r === 'success') return '✅';
+              if (r === 'skipped') return '⏭️';
+              if (r === 'failure') return '❌';
+              return '⚠️';
+            };
+
+            const label = (r) => {
+              if (r === 'success') return 'clean';
+              if (r === 'skipped') return 'skipped';
+              if (r === 'failure') return 'findings';
+              return r;
             };
 
             let rows = [];
             if (sc && sc !== 'skipped') {
-              rows.push(`| ShellCheck | ${icon(sc)} |`);
+              rows.push(`| ShellCheck | ${icon(sc)} ${label(sc)} |`);
             }
             if (hado && hado !== 'skipped') {
-              rows.push(`| Hadolint | ${icon(hado)} |`);
+              rows.push(`| Hadolint | ${icon(hado)} ${label(hado)} |`);
             }
             if (cmake && cmake !== 'skipped') {
-              rows.push(`| cmake-lint | ${icon(cmake)} |`);
+              rows.push(`| cmake-lint | ${icon(cmake)} ${label(cmake)} |`);
             }
 
             if (rows.length === 0) return;
 
-            let body = marker + '\n## Infrastructure Lint Report\n\n';
-            body += '| Tool | Status |\n|------|--------|\n';
+            let body = marker + '\n## Infrastructure Lint Scoreboard\n\n';
+            body += '| Check | Result |\n|:------|:------:|\n';
             body += rows.join('\n') + '\n';
-            body += '\n---\n*Only files changed in this PR were checked.*';
+            body += '\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · Only changed files checked</sub>';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,

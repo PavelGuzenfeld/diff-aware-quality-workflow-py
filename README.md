@@ -1,5 +1,7 @@
 # Standard
 
+[![Release](https://img.shields.io/github/v/release/PavelGuzenfeld/standard?label=version&color=blue)](https://github.com/PavelGuzenfeld/standard/releases)
+
 Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SAST, sanitizers, fuzzing — only check what changed.
 
 ## What It Does
@@ -15,6 +17,21 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 - **Naming enforcement** — snake_case files and `include/<package_name>/` directories, identifier naming via clang-tidy
 - **Hardening templates** — sanitizer presets, multi-compiler CI, fuzzing, production flags
 - **PR feedback** — inline annotations + auto-updating summary comments
+- **Auto-release** — conventional-commit version bumps, git tags, and GitHub Releases on push to main
+
+## Quality Scoreboard
+
+Every PR gets an auto-updating emoji scoreboard comment from each workflow:
+
+| Category | Checks | Workflow |
+|----------|--------|----------|
+| **C++ Quality** | clang-tidy, cppcheck, clang-format, flawfinder, ASan/UBSan, TSan, coverage, IWYU, file naming, banned patterns | `cpp-quality.yml` |
+| **Python Quality** | ruff/flake8 lint, pytest, diff-cover | `python-quality.yml` |
+| **Python SAST** | Semgrep, pip-audit, CodeQL | `sast-python.yml` |
+| **Infrastructure** | ShellCheck, Hadolint, cmake-lint | `infra-lint.yml` |
+| **Supply Chain** | Container SBOM, source SBOM, Grype vulnerabilities, license compliance | `sbom.yml` |
+| **Versioning** | SemVer in package.xml, CMakeLists.txt, pyproject.toml | `version-check.yml` |
+| **Release** | Auto-tag + GitHub Release on push to main | `auto-release.yml` |
 
 ## Quick Start
 
@@ -74,6 +91,8 @@ jobs:
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
 | [`version-check.yml`](.github/workflows/version-check.yml) | Multi | SemVer validation in package.xml, CMakeLists.txt, pyproject.toml |
+| [`auto-release.yml`](.github/workflows/auto-release.yml) | Multi | Reusable auto-release: conventional-commit version bumps, git tags, GitHub Releases |
+| [`release.yml`](.github/workflows/release.yml) | — | Triggers auto-release on push to main (standard repo) |
 
 ## Workflow Inputs
 
@@ -393,6 +412,8 @@ Generate project scaffolding from the standard:
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
+  auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release)
+  release.yml               Triggers auto-release on push to main
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo
   pull-request-feedback.yml PR feedback for this repo

@@ -215,6 +215,8 @@ Validate version strings in `package.xml`, `CMakeLists.txt`, and `pyproject.toml
     echo "All version strings valid."
 ```
 
-### Future: Reusable Job
+### Reusable Auto-Release Workflow
 
-These checks will be added as an opt-in job in `cpp-quality.yml` (like `file-naming` or `shellcheck`) so consumers get version validation automatically.
+The [`auto-release.yml`](../.github/workflows/auto-release.yml) workflow automates version bumps based on conventional commit prefixes (`feat:`, `fix:`, `feat!:`, `BREAKING CHANGE:`). It creates annotated git tags and GitHub Releases on every push to `main`. See the [Integration Guide](INTEGRATION.md#auto-release-setup) for setup instructions.
+
+The [`version-check.yml`](../.github/workflows/version-check.yml) workflow validates that version strings in `package.xml`, `CMakeLists.txt`, and `pyproject.toml` follow the SemVer regex on every PR.

@@ -131,15 +131,22 @@ jobs:
             const lintResult = '${{ needs.lint-and-test.outputs.lint_outcome }}';
             const output = process.env.DIFF_COVER_REPORT || '';
 
-            let body = marker + '\n## Python Quality Report\n\n';
-            body += `**Linter**: ${{ inputs.python_linter }}\n`;
-            body += `**Lint status**: ${lintResult === 'success' ? 'clean' : 'issues found in changed lines'}\n\n`;
+            const icon = (r) => {
+              if (r === 'success') return '✅';
+              if (r === 'skipped') return '⏭️';
+              if (r === 'failure') return '❌';
+              return '⚠️';
+            };
+
+            let body = marker + '\n## Python Quality Scoreboard\n\n';
+            body += '| Check | Result |\n|:------|:------:|\n';
+            body += `| ${{ inputs.python_linter }} lint | ${icon(lintResult)} ${lintResult === 'success' ? 'clean' : 'issues found'} |\n`;
 
             if (output) {
-              body += output;
+              body += '\n' + output;
             }
 
-            body += '\n\n---\n*Only lines changed in this PR were checked.*';
+            body += '\n\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · Only changed lines checked</sub>';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,

@@ -498,22 +498,22 @@ jobs:
             const vulnScan = '${{ needs.vuln-scan.result }}';
             const licenseCheck = '${{ needs.license-check.result }}';
 
-            const icon = (result) => {
-              if (result === 'success') return ':white_check_mark:';
-              if (result === 'skipped') return ':next_track_button:';
-              if (result === 'failure') return ':x:';
-              return ':warning:';
+            const icon = (r) => {
+              if (r === 'success') return '✅';
+              if (r === 'skipped') return '⏭️';
+              if (r === 'failure') return '❌';
+              return '⚠️';
             };
 
-            const label = (result) => {
-              if (result === 'success') return 'passed';
-              if (result === 'skipped') return 'skipped';
-              if (result === 'failure') return 'failed';
-              return result;
+            const label = (r) => {
+              if (r === 'success') return 'passed';
+              if (r === 'skipped') return 'skipped';
+              if (r === 'failure') return 'failed';
+              return r;
             };
 
-            let body = marker + '\n## SBOM & Vulnerability Report\n\n';
-            body += '| Check | Status |\n|-------|--------|\n';
+            let body = marker + '\n## SBOM & Supply Chain Scoreboard\n\n';
+            body += '| Check | Result |\n|:------|:------:|\n';
             body += `| Container SBOM (SPDX + CycloneDX) | ${icon(containerSbom)} ${label(containerSbom)} |\n`;
 
             if (sourceSbom && sourceSbom !== 'skipped') {
@@ -533,7 +533,7 @@ jobs:
               body += '\n**Vulnerability gate:** report-only (not blocking)\n';
             }
 
-            body += '\n---\n*SBOM artifacts and Grype SARIF available in workflow artifacts. Vulnerabilities visible in the Security tab.*';
+            body += '\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · SBOM artifacts available in workflow artifacts</sub>';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
