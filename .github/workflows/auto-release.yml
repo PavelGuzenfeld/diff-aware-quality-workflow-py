@@ -96,6 +96,8 @@ jobs:
       - name: Create and push tag
         if: steps.bump.outputs.skip != 'true'
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           NEXT="${{ steps.version.outputs.next }}"
           git tag -a "$NEXT" -m "Release $NEXT"
           git push origin "$NEXT"
