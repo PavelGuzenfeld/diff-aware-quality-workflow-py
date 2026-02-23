@@ -39,10 +39,18 @@ on:
         type: string
         default: '"ubuntu-latest"'
         description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
+      enable_dangerous_workflows:
+        type: boolean
+        default: false
+        description: 'Enable dangerous-workflow pattern audit (opt-in)'
+      enable_binary_artifacts:
+        type: boolean
+        default: false
+        description: 'Enable binary artifact detection in PRs (opt-in)'
       select_jobs:
         type: string
         default: 'all'
-        description: 'Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint)'
+        description: 'Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts)'
 
 permissions:
   actions: read
@@ -325,10 +333,138 @@ jobs:
             echo "cmake-lint: no findings."
           fi
 
+  dangerous-workflows:
+    name: Dangerous Workflows
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_dangerous_workflows && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'dangerous-workflows'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed workflow files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- '.github/workflows/*.yml' '.github/workflows/*.yaml' || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No workflow files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_workflows.txt
+            echo "Found $(echo "$FILES" | wc -l) changed workflow file(s)."
+          fi
+
+      - name: Scan for dangerous patterns
+        if: steps.changed.outputs.skip == 'false'
+        id: scan
+        run: |
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            [ -f "$file" ] || continue
+
+            # Pattern 1: pull_request_target with checkout of PR ref
+            if grep -q 'pull_request_target' "$file"; then
+              if grep -qE 'github\.event\.pull_request\.head\.(sha|ref)' "$file"; then
+                echo "::error file=${file}::Dangerous: pull_request_target with checkout of PR head ref — risk of arbitrary code execution"
+                VIOLATIONS=$((VIOLATIONS + 1))
+              fi
+            fi
+
+            # Pattern 2: Untrusted PR input in run: steps
+            LINE_NUM=0
+            IN_RUN=false
+            while IFS= read -r line || [ -n "$line" ]; do
+              LINE_NUM=$((LINE_NUM + 1))
+              # Detect run: blocks (single or multi-line)
+              if echo "$line" | grep -qE '^\s+run:\s*[|>]?\s*$' || echo "$line" | grep -qE '^\s+run:\s+\S'; then
+                IN_RUN=true
+              elif $IN_RUN && echo "$line" | grep -qE '^\s+[a-zA-Z_-]+:' && ! echo "$line" | grep -qE '^\s+#'; then
+                IN_RUN=false
+              fi
+
+              if $IN_RUN; then
+                if echo "$line" | grep -qE '\$\{\{\s*github\.event\.pull_request\.(title|body|head\.ref)\s*\}\}'; then
+                  echo "::error file=${file},line=${LINE_NUM}::Injection risk: PR-controlled input in run: step — use an environment variable instead"
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                fi
+                if echo "$line" | grep -qE '\$\{\{\s*github\.event\.issue\.(title|body)\s*\}\}'; then
+                  echo "::error file=${file},line=${LINE_NUM}::Injection risk: issue-controlled input in run: step — use an environment variable instead"
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                fi
+                if echo "$line" | grep -qE '\$\{\{\s*github\.event\.comment\.body\s*\}\}'; then
+                  echo "::error file=${file},line=${LINE_NUM}::Injection risk: comment body in run: step — use an environment variable instead"
+                  VIOLATIONS=$((VIOLATIONS + 1))
+                fi
+              fi
+            done < "$file"
+          done < /tmp/changed_workflows.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "dangerous-workflows: $VIOLATIONS finding(s)."
+            exit 1
+          else
+            echo "dangerous-workflows: no findings."
+          fi
+
+  binary-artifacts:
+    name: Binary Artifacts
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_binary_artifacts && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'binary-artifacts'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ inputs.base_ref || github.base_ref || 'main' }} -- || true)
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No files changed."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "$FILES" > /tmp/changed_files.txt
+            echo "Found $(echo "$FILES" | wc -l) changed file(s)."
+          fi
+
+      - name: Scan for binary artifacts
+        if: steps.changed.outputs.skip == 'false'
+        id: scan
+        run: |
+          BINARY_EXTENSIONS='\.exe$|\.dll$|\.so$|\.dylib$|\.a$|\.o$|\.obj$|\.lib$|\.pyc$|\.pyo$|\.whl$|\.egg$|\.jar$|\.war$|\.class$|\.bin$'
+          VIOLATIONS=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if echo "$file" | grep -qE "$BINARY_EXTENSIONS"; then
+              echo "::error file=${file}::Binary artifact committed: ${file##*/}"
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+          done < /tmp/changed_files.txt
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "binary-artifacts: $VIOLATIONS binary file(s) detected."
+            exit 1
+          else
+            echo "binary-artifacts: no binaries detected."
+          fi
+
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [shellcheck, hadolint, cmake-lint]
+    needs: [shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -339,6 +475,8 @@ jobs:
             const sc = '${{ needs.shellcheck.result }}';
             const hado = '${{ needs.hadolint.result }}';
             const cmake = '${{ needs.cmake-lint.result }}';
+            const dw = '${{ needs.dangerous-workflows.result }}';
+            const ba = '${{ needs.binary-artifacts.result }}';
 
             const icon = (r) => {
               if (r === 'success') return '✅';
@@ -363,6 +501,12 @@ jobs:
             }
             if (cmake && cmake !== 'skipped') {
               rows.push(`| cmake-lint | ${icon(cmake)} ${label(cmake)} |`);
+            }
+            if (dw && dw !== 'skipped') {
+              rows.push(`| Dangerous Workflows | ${icon(dw)} ${label(dw)} |`);
+            }
+            if (ba && ba !== 'skipped') {
+              rows.push(`| Binary Artifacts | ${icon(ba)} ${label(ba)} |`);
             }
 
             if (rows.length === 0) return;

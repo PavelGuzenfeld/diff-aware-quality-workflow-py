@@ -256,6 +256,18 @@ Workflow: [`sbom.yml`](../.github/workflows/sbom.yml)
 
 All artifacts (SPDX JSON, CycloneDX JSON, Grype report) are uploaded as GitHub Actions artifacts. Results are posted as a PR summary comment.
 
+### Supply Chain Hygiene
+
+Additional checks that strengthen supply chain security posture:
+
+| Check | Tool | What it does |
+|-------|------|-------------|
+| Dependency updates | Dependabot | Monitors GitHub Actions and pip ecosystems for outdated dependencies |
+| Binary artifact scan | `infra-lint.yml` | Detects committed binary files (`.exe`, `.dll`, `.so`, `.jar`, etc.) in PRs |
+| Dangerous workflow audit | `infra-lint.yml` | Detects `pull_request_target` misuse and injection vectors in workflow files |
+| SLSA provenance | `auto-release.yml` | Attests build provenance for releases using `actions/attest-build-provenance` |
+| Security policy | `SECURITY.md` | Defines vulnerability reporting process (OpenSSF Scorecard requirement) |
+
 ---
 
 ## Phase 4: Testing & Hardening
@@ -330,5 +342,6 @@ The `release-hardened` CMake preset enables:
 | PR (Python) | Pull request | ruff/flake8, pytest, diff-cover |
 | PR (SAST) | Pull request | Semgrep, pip-audit, CodeQL (optional) |
 | PR (SBOM) | Pull request | Syft, Grype, source SBOM, license check |
+| PR (Supply Chain) | Pull request | Dangerous-workflow audit, binary-artifact scan (opt-in via infra-lint) |
 | Post-merge | Schedule/push | CodeQL, Infer, fuzz corpus runs |
 | Local dev | Manual | Scripts, sanitizer presets, CMake warnings |

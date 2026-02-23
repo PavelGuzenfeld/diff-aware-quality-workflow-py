@@ -155,6 +155,8 @@ fi
 enable_shellcheck=n
 enable_hadolint=n
 enable_cmake_lint=n
+enable_dangerous_workflows=n
+enable_binary_artifacts=n
 
 echo ""
 echo "--- Infrastructure lint ---"
@@ -163,9 +165,11 @@ ask "  Hadolint (Dockerfiles)?" "n" enable_hadolint
 if [[ "$enable_cpp" == "y" ]]; then
     ask "  cmake-lint (CMake files)?" "n" enable_cmake_lint
 fi
+ask "  Dangerous-workflow audit (CI injection patterns)?" "n" enable_dangerous_workflows
+ask "  Binary artifact detection (committed binaries)?" "n" enable_binary_artifacts
 
 enable_infra=n
-[[ "$enable_shellcheck" == "y" || "$enable_hadolint" == "y" || "$enable_cmake_lint" == "y" ]] && enable_infra=y
+[[ "$enable_shellcheck" == "y" || "$enable_hadolint" == "y" || "$enable_cmake_lint" == "y" || "$enable_dangerous_workflows" == "y" || "$enable_binary_artifacts" == "y" ]] && enable_infra=y
 
 # --- Create output directory --------------------------------------------------
 
@@ -332,9 +336,11 @@ HEADER
         echo "    uses: ${STANDARD_REPO}/.github/workflows/infra-lint.yml@main"
         echo "    with:"
 
-        [[ "$enable_shellcheck" == "y" ]] && echo "      enable_shellcheck: true"
-        [[ "$enable_hadolint" == "y" ]]   && echo "      enable_hadolint: true"
-        [[ "$enable_cmake_lint" == "y" ]] && echo "      enable_cmake_lint: true"
+        [[ "$enable_shellcheck" == "y" ]]          && echo "      enable_shellcheck: true"
+        [[ "$enable_hadolint" == "y" ]]            && echo "      enable_hadolint: true"
+        [[ "$enable_cmake_lint" == "y" ]]          && echo "      enable_cmake_lint: true"
+        [[ "$enable_dangerous_workflows" == "y" ]] && echo "      enable_dangerous_workflows: true"
+        [[ "$enable_binary_artifacts" == "y" ]]    && echo "      enable_binary_artifacts: true"
 
         echo "    permissions:"
         echo "      actions: read"

@@ -540,6 +540,78 @@ fi
 echo ""
 
 # =============================================================================
+echo "=== 8. Dangerous-workflow patterns ==="
+# =============================================================================
+
+# Pattern: PR-controlled input injection in run: steps
+INJECTION_PR_PATTERN='\$\{\{\s*github\.event\.pull_request\.(title|body|head\.ref)\s*\}\}'
+INJECTION_ISSUE_PATTERN='\$\{\{\s*github\.event\.issue\.(title|body)\s*\}\}'
+INJECTION_COMMENT_PATTERN='\$\{\{\s*github\.event\.comment\.body\s*\}\}'
+
+# PR injection — must detect
+assert_matches "$INJECTION_PR_PATTERN" '  echo "${{ github.event.pull_request.title }}"'     "PR title injection"
+assert_matches "$INJECTION_PR_PATTERN" '  echo "${{ github.event.pull_request.body }}"'      "PR body injection"
+assert_matches "$INJECTION_PR_PATTERN" '  echo "${{ github.event.pull_request.head.ref }}"'  "PR head.ref injection"
+
+# Issue injection — must detect
+assert_matches "$INJECTION_ISSUE_PATTERN" '  echo "${{ github.event.issue.title }}"'         "issue title injection"
+assert_matches "$INJECTION_ISSUE_PATTERN" '  echo "${{ github.event.issue.body }}"'          "issue body injection"
+
+# Comment injection — must detect
+assert_matches "$INJECTION_COMMENT_PATTERN" '  echo "${{ github.event.comment.body }}"'      "comment body injection"
+
+# Safe patterns — must NOT detect
+assert_no_match "$INJECTION_PR_PATTERN" '  echo "${{ github.event.pull_request.number }}"'   "PR number is safe"
+assert_no_match "$INJECTION_PR_PATTERN" '  echo "${{ github.sha }}"'                          "github.sha is safe"
+assert_no_match "$INJECTION_PR_PATTERN" '  echo "${{ github.ref }}"'                          "github.ref is safe"
+assert_no_match "$INJECTION_ISSUE_PATTERN" '  echo "${{ github.event.issue.number }}"'        "issue number is safe"
+assert_no_match "$INJECTION_COMMENT_PATTERN" '  echo "${{ github.event.comment.id }}"'        "comment id is safe"
+
+# Pattern: pull_request_target + checkout of PR head
+PRT_CHECKOUT_PATTERN='github\.event\.pull_request\.head\.(sha|ref)'
+assert_matches "$PRT_CHECKOUT_PATTERN" '  ref: ${{ github.event.pull_request.head.sha }}'    "PRT checkout head.sha"
+assert_matches "$PRT_CHECKOUT_PATTERN" '  ref: ${{ github.event.pull_request.head.ref }}'    "PRT checkout head.ref"
+assert_no_match "$PRT_CHECKOUT_PATTERN" '  ref: ${{ github.ref }}'                            "normal ref is safe"
+
+echo ""
+
+# =============================================================================
+echo "=== 9. Binary-artifact patterns ==="
+# =============================================================================
+
+BINARY_PATTERN='\.exe$|\.dll$|\.so$|\.dylib$|\.a$|\.o$|\.obj$|\.lib$|\.pyc$|\.pyo$|\.whl$|\.egg$|\.jar$|\.war$|\.class$|\.bin$'
+
+# Must detect binary extensions
+assert_matches "$BINARY_PATTERN" 'build/app.exe'            "detect .exe"
+assert_matches "$BINARY_PATTERN" 'lib/helper.dll'           "detect .dll"
+assert_matches "$BINARY_PATTERN" 'lib/libfoo.so'            "detect .so"
+assert_matches "$BINARY_PATTERN" 'lib/libfoo.dylib'         "detect .dylib"
+assert_matches "$BINARY_PATTERN" 'lib/libfoo.a'             "detect .a"
+assert_matches "$BINARY_PATTERN" 'build/main.o'             "detect .o"
+assert_matches "$BINARY_PATTERN" 'build/main.obj'           "detect .obj"
+assert_matches "$BINARY_PATTERN" 'lib/helper.lib'           "detect .lib"
+assert_matches "$BINARY_PATTERN" '__pycache__/mod.pyc'      "detect .pyc"
+assert_matches "$BINARY_PATTERN" '__pycache__/mod.pyo'      "detect .pyo"
+assert_matches "$BINARY_PATTERN" 'dist/pkg-1.0.whl'         "detect .whl"
+assert_matches "$BINARY_PATTERN" 'dist/pkg-1.0.egg'         "detect .egg"
+assert_matches "$BINARY_PATTERN" 'lib/app.jar'              "detect .jar"
+assert_matches "$BINARY_PATTERN" 'deploy/app.war'           "detect .war"
+assert_matches "$BINARY_PATTERN" 'build/Main.class'         "detect .class"
+assert_matches "$BINARY_PATTERN" 'firmware/image.bin'        "detect .bin"
+
+# Must NOT detect source/text files
+assert_no_match "$BINARY_PATTERN" 'src/main.cpp'            "cpp not matched"
+assert_no_match "$BINARY_PATTERN" 'src/lib.hpp'             "hpp not matched"
+assert_no_match "$BINARY_PATTERN" 'scripts/build.sh'        "sh not matched"
+assert_no_match "$BINARY_PATTERN" 'README.md'               "md not matched"
+assert_no_match "$BINARY_PATTERN" 'config.yaml'             "yaml not matched"
+assert_no_match "$BINARY_PATTERN" 'Makefile'                "Makefile not matched"
+assert_no_match "$BINARY_PATTERN" 'src/binary_utils.cpp'    "binary_utils.cpp not matched (substring)"
+assert_no_match "$BINARY_PATTERN" 'docs/classes.md'         "classes.md not matched (substring)"
+
+echo ""
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo "========================================"

@@ -7,9 +7,15 @@ on:
         type: string
         default: 'patch'
         description: 'Default bump when no conventional commit prefix detected'
+      enable_provenance:
+        type: boolean
+        default: false
+        description: 'Enable SLSA provenance attestation for releases (opt-in)'
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -121,3 +127,10 @@ jobs:
         run: |
           NEXT="${{ steps.version.outputs.next }}"
           gh release create "$NEXT" --generate-notes --title "$NEXT"
+
+      - name: Attest release provenance
+        if: steps.bump.outputs.skip != 'true' && inputs.enable_provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ github.repository }}
+          subject-digest: sha256:${{ github.sha }}

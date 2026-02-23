@@ -28,7 +28,7 @@ Every PR gets an auto-updating emoji scoreboard comment from each workflow:
 | **C++ Quality** | clang-tidy, cppcheck, clang-format, flawfinder, ASan/UBSan, TSan, coverage, IWYU, file naming, banned patterns | `cpp-quality.yml` |
 | **Python Quality** | ruff/flake8 lint, pytest, diff-cover | `python-quality.yml` |
 | **Python SAST** | Semgrep, pip-audit, CodeQL | `sast-python.yml` |
-| **Infrastructure** | ShellCheck, Hadolint, cmake-lint | `infra-lint.yml` |
+| **Infrastructure** | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan | `infra-lint.yml` |
 | **Supply Chain** | Container SBOM, source SBOM, Grype vulnerabilities, license compliance | `sbom.yml` |
 | **Versioning** | SemVer in package.xml, CMakeLists.txt, pyproject.toml | `version-check.yml` |
 | **Release** | Auto-tag + GitHub Release on push to main | `auto-release.yml` |
@@ -86,12 +86,12 @@ jobs:
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
 | [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, sanitizers, TSAN, coverage, IWYU, file naming, banned patterns |
-| [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files) |
+| [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files), dangerous-workflow audit, binary-artifact scan |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
 | [`version-check.yml`](.github/workflows/version-check.yml) | Multi | SemVer validation in package.xml, CMakeLists.txt, pyproject.toml |
-| [`auto-release.yml`](.github/workflows/auto-release.yml) | Multi | Reusable auto-release: conventional-commit version bumps, git tags, GitHub Releases |
+| [`auto-release.yml`](.github/workflows/auto-release.yml) | Multi | Reusable auto-release: conventional-commit version bumps, git tags, GitHub Releases, SLSA provenance |
 | [`release.yml`](.github/workflows/release.yml) | — | Triggers auto-release on push to main (standard repo) |
 
 ## Workflow Inputs
@@ -204,7 +204,7 @@ jobs:
 </details>
 
 <details>
-<summary><strong>Infra Lint Inputs</strong> (10 inputs)</summary>
+<summary><strong>Infra Lint Inputs</strong> (12 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -214,10 +214,12 @@ jobs:
 | `hadolint_config` | `''` | Path to .hadolint.yaml config file |
 | `enable_cmake_lint` | `false` | Enable cmake-lint for CMake files (opt-in) |
 | `cmake_lint_config` | `''` | Path to .cmake-format.yaml config file |
+| `enable_dangerous_workflows` | `false` | Enable dangerous-workflow pattern audit (opt-in) |
+| `enable_binary_artifacts` | `false` | Enable binary artifact detection in PRs (opt-in) |
 | `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
 | `base_ref` | `''` | Base branch for diff |
 | `runner` | `ubuntu-latest` | Runner labels as JSON |
-| `select_jobs` | `all` | Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint) |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts) |
 
 </details>
 
@@ -277,6 +279,16 @@ jobs:
 | `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
 | `base_ref` | `''` | Base branch for diff (fallback when github.base_ref is empty) |
 | `runner` | `ubuntu-latest` | Runner labels as JSON |
+
+</details>
+
+<details>
+<summary><strong>Auto-Release Inputs</strong> (2 inputs)</summary>
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `default_bump` | `patch` | Default bump when no conventional commit prefix detected |
+| `enable_provenance` | `false` | Enable SLSA provenance attestation for releases (opt-in) |
 
 </details>
 
@@ -348,6 +360,8 @@ jobs:
 | [`test-checklist.md`](configs/test-checklist.md) | Mandatory test edge case checklist (11 categories) |
 | [`repo-structure-ros2.txt`](configs/repo-structure-ros2.txt) | ROS2 package structure validation template |
 | [`AGENTS.md`](configs/AGENTS.md) | AI agent instructions template for consuming projects |
+| [`SECURITY.md`](configs/SECURITY.md) | Security policy template for consuming projects |
+| [`dependabot.yml`](configs/dependabot.yml) | Dependabot config template for consuming projects |
 
 ## Scripts
 
@@ -396,6 +410,7 @@ Generate project scaffolding from the standard:
 | Script | Purpose |
 |--------|---------|
 | `check-repo-structure.sh` | Validate repo directory structure against a template |
+| `check-dangerous-workflows.sh` | Audit workflow files for injection patterns |
 | `filter-excludes.sh` | Filter file lists against exclusion patterns |
 
 ```bash
@@ -407,12 +422,12 @@ Generate project scaffolding from the standard:
 ```
 .github/workflows/
   cpp-quality.yml           Reusable C++ quality workflow (52 inputs, 13+ opt-in checks)
-  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint)
+  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
-  auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release)
+  auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release → SLSA provenance)
   release.yml               Triggers auto-release on push to main
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo
@@ -429,8 +444,9 @@ scripts/
   generate-badges.sh         Generate README badge markdown
   install-hooks.sh           Install git pre-commit hooks
   check-repo-structure.sh    Validate repo directory structure
+  check-dangerous-workflows.sh Audit workflow files for injection patterns
   filter-excludes.sh         Filter file lists against exclusion patterns
-configs/                    Drop-in configs, CI templates, and agent instructions (15 files)
+configs/                    Drop-in configs, CI templates, and agent instructions (17 files)
 tests/
   test_patterns.sh          Pattern validation tests (109 tests)
   test_calculator.py        Python demo tests

@@ -586,6 +586,79 @@ No commits are made to `main` (avoids infinite loops). The version of record is 
 
 ---
 
+## Security Hygiene Setup
+
+These steps improve your OpenSSF Scorecard and supply chain security posture.
+
+### 1. Add a Security Policy
+
+Copy the template and fill in your contact details:
+
+```bash
+cp configs/SECURITY.md SECURITY.md
+```
+
+Edit the `TODO` placeholders with your security contact email and response timelines.
+
+### 2. Enable Dependabot
+
+Copy the template and uncomment ecosystems relevant to your project:
+
+```bash
+mkdir -p .github
+cp configs/dependabot.yml .github/dependabot.yml
+```
+
+The template includes `github-actions` monitoring by default. Uncomment `pip`, `npm`, `cargo`, or `docker` sections as needed.
+
+### 3. Enable Dangerous-Workflow Audit
+
+Add to your infra-lint workflow call:
+
+```yaml
+with:
+  enable_dangerous_workflows: true
+```
+
+This detects `pull_request_target` misuse and injection vectors (`${{ github.event.pull_request.title }}` in `run:` steps) in changed workflow files.
+
+For local use, run the standalone script:
+
+```bash
+./scripts/check-dangerous-workflows.sh .github/workflows/
+```
+
+### 4. Enable Binary Artifact Detection
+
+Add to your infra-lint workflow call:
+
+```yaml
+with:
+  enable_binary_artifacts: true
+```
+
+This flags committed binary files (`.exe`, `.dll`, `.so`, `.jar`, `.pyc`, `.whl`, etc.) in PRs.
+
+### 5. Enable SLSA Provenance
+
+Add to your release workflow call:
+
+```yaml
+jobs:
+  release:
+    uses: PavelGuzenfeld/standard/.github/workflows/auto-release.yml@main
+    with:
+      enable_provenance: true
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+```
+
+This creates a SLSA provenance attestation for each release using `actions/attest-build-provenance`.
+
+---
+
 ## Workflow Inputs Reference
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).
