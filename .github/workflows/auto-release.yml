@@ -130,7 +130,7 @@ jobs:
 
       - name: Attest release provenance
         if: steps.bump.outputs.skip != 'true' && inputs.enable_provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-name: ${{ github.repository }}
           subject-digest: sha256:${{ github.sha }}
