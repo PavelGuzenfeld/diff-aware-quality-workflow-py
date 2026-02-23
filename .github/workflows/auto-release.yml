@@ -11,6 +11,13 @@ on:
         type: boolean
         default: false
         description: 'Enable SLSA provenance attestation for releases (opt-in)'
+    secrets:
+      app_id:
+        required: false
+        description: 'GitHub App ID — if provided with app_private_key, release events will trigger downstream workflows'
+      app_private_key:
+        required: false
+        description: 'GitHub App private key (PEM)'
 
 permissions:
   contents: write
@@ -120,10 +127,18 @@ jobs:
           git tag -a "$NEXT" -m "Release $NEXT"
           git push origin "$NEXT"
 
+      - name: Generate GitHub App token
+        if: steps.bump.outputs.skip != 'true' && secrets.app_id != ''
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+
       - name: Create GitHub Release
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
         run: |
           NEXT="${{ steps.version.outputs.next }}"
           gh release create "$NEXT" --generate-notes --title "$NEXT"
