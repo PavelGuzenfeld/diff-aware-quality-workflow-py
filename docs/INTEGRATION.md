@@ -261,6 +261,43 @@ cmake --preset debug-asan && cmake --build --preset debug-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
+### 8. Add Fuzz Testing
+
+Copy the fuzz CI template:
+
+```bash
+cp configs/ci-fuzz.yml .github/workflows/fuzz.yml
+```
+
+Edit the `matrix.target` array with your fuzz target names:
+
+```yaml
+matrix:
+  target: [parse_input, decode_frame]  # your fuzz targets
+```
+
+Create fuzz harnesses in `fuzz_targets/`:
+
+```cpp
+// fuzz_targets/parse_input.cpp
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    my_parser(data, size);
+    return 0;
+}
+```
+
+In your `CMakeLists.txt`, gate fuzz targets with an option:
+
+```cmake
+option(ENABLE_FUZZING "Build fuzz targets" OFF)
+if(ENABLE_FUZZING)
+    add_executable(parse_input fuzz_targets/parse_input.cpp)
+    target_link_libraries(parse_input PRIVATE my_library -fsanitize=fuzzer)
+endif()
+```
+
+The template runs libFuzzer with ASan/UBSan, caches the corpus between runs, and uploads crash artifacts on failure. It triggers on PRs and weekly.
+
 ---
 
 ## Full Python Setup

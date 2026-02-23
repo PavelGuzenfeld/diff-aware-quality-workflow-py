@@ -140,6 +140,7 @@ When adding a check: update all relevant docs. When adding a script: add to READ
 - Search for dependencies and headers inside the container (not on the host filesystem)
 - Only source code (volume-mounted) may be browsed/edited on the host
 - Every CI check must be reproducible locally by running the same script inside the container
+- Fuzz targets require Clang with `-fsanitize=fuzzer` — see `configs/ci-fuzz.yml` for the CI template
 
 ## Git & PR Rules
 

@@ -21,6 +21,7 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | ASan/UBSan | Address + undefined behavior sanitizer | Opt-in |
 | TSan | Thread sanitizer | Opt-in |
 | gcov/lcov | Code coverage + diff-cover | Opt-in |
+| libFuzzer | Continuous fuzzing with ASan + corpus caching | Template (`ci-fuzz.yml`) |
 
 **Script & Container Linting:**
 
@@ -311,6 +312,7 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | TSan thread sanitizer job | Done | cpp-quality.yml |
 | Code coverage (gcov/lcov) | Done | cpp-quality.yml |
 | IWYU include analysis | Done | cpp-quality.yml |
+| libFuzzer CI template | Done | configs/ci-fuzz.yml |
 | Local IWYU script (diff-iwyu.sh) | Done | cpp-quality.yml |
 | Pre-commit hook installer (install-hooks.sh) | Done | - |
 | Baseline/suppression generator (generate-baseline.sh) | Done | - |

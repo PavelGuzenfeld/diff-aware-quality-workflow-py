@@ -128,6 +128,7 @@ if [[ "$enable_cpp" == "y" ]]; then
     ask "  TSAN (ThreadSanitizer) tests?" "n" enable_tsan
     ask "  Code coverage reporting?" "n" enable_coverage
     ask "  Include-What-You-Use (IWYU)?" "n" enable_iwyu
+    ask "  libFuzzer continuous fuzzing?" "n" enable_fuzz
 fi
 
 # Python workflow inputs
@@ -351,16 +352,32 @@ HEADER
     echo "Generated: $INFRA_FILE"
 fi
 
+# --- Generate fuzz workflow ---------------------------------------------------
+
+if [[ "${enable_fuzz:-n}" == "y" ]]; then
+    FUZZ_FILE="$OUTPUT_DIR/fuzz.yml"
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    TEMPLATE="$SCRIPT_DIR/../configs/ci-fuzz.yml"
+
+    if [ -f "$TEMPLATE" ]; then
+        cp "$TEMPLATE" "$FUZZ_FILE"
+        echo "Generated: $FUZZ_FILE (from template — edit matrix.target with your fuzz targets)"
+    else
+        echo "Warning: configs/ci-fuzz.yml template not found, skipping fuzz workflow"
+    fi
+fi
+
 # --- Summary ------------------------------------------------------------------
 
 echo ""
 echo "=== Workflow Generation Complete ==="
 echo ""
 echo "Generated files in $OUTPUT_DIR/:"
-[[ "$enable_cpp" == "y" ]]   && echo "  - cpp-quality.yml"
-[[ "$enable_python" == "y" ]] && echo "  - python-quality.yml"
-[[ "$enable_sast" == "y" ]]  && echo "  - sast-python.yml"
-[[ "$enable_infra" == "y" ]] && echo "  - infra-lint.yml"
+[[ "$enable_cpp" == "y" ]]        && echo "  - cpp-quality.yml"
+[[ "$enable_python" == "y" ]]     && echo "  - python-quality.yml"
+[[ "$enable_sast" == "y" ]]       && echo "  - sast-python.yml"
+[[ "$enable_infra" == "y" ]]      && echo "  - infra-lint.yml"
+[[ "${enable_fuzz:-n}" == "y" ]]  && echo "  - fuzz.yml (edit matrix.target)"
 echo ""
 echo "Next steps:"
 echo "  1. Review the generated files"
