@@ -1,0 +1,93 @@
+name: Version Sync
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: 'Release tag (e.g. v1.2.3)'
+      default_branch:
+        type: string
+        default: 'main'
+        description: 'Branch to checkout and push to'
+      enable_cmake:
+        type: boolean
+        default: false
+        description: 'Update project(... VERSION x.y.z) in CMakeLists.txt'
+      cmake_path:
+        type: string
+        default: 'CMakeLists.txt'
+        description: 'Path to CMakeLists.txt'
+      enable_readme_fetchcontent:
+        type: boolean
+        default: false
+        description: 'Update GIT_TAG vx.y.z in README.md'
+      readme_path:
+        type: string
+        default: 'README.md'
+        description: 'Path to README file'
+      enable_pyproject:
+        type: boolean
+        default: false
+        description: 'Update version = "x.y.z" in pyproject.toml'
+      pyproject_path:
+        type: string
+        default: 'pyproject.toml'
+        description: 'Path to pyproject.toml'
+      enable_package_xml:
+        type: boolean
+        default: false
+        description: 'Update <version>x.y.z</version> in package.xml'
+      package_xml_path:
+        type: string
+        default: 'package.xml'
+        description: 'Path to package.xml'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync Version Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.default_branch }}
+
+      - name: Update version files
+        run: |
+          TAG="${{ inputs.tag }}"
+          VER="${TAG#v}"
+          echo "Syncing to $TAG (version $VER)"
+
+          if [ "${{ inputs.enable_cmake }}" = "true" ]; then
+            sed -i "s/\(project([^ ]* VERSION \)[0-9.]*/\1${VER}/" "${{ inputs.cmake_path }}"
+            echo "CMakeLists.txt → $(grep -oP 'VERSION \K[0-9.]+' "${{ inputs.cmake_path }}")"
+          fi
+
+          if [ "${{ inputs.enable_readme_fetchcontent }}" = "true" ]; then
+            sed -i "s/GIT_TAG v[0-9.]*/GIT_TAG ${TAG}/" "${{ inputs.readme_path }}"
+            echo "README GIT_TAG → $(grep -oP 'GIT_TAG \K\S+' "${{ inputs.readme_path }}")"
+          fi
+
+          if [ "${{ inputs.enable_pyproject }}" = "true" ]; then
+            sed -i "s/^version = \"[0-9.]*\"/version = \"${VER}\"/" "${{ inputs.pyproject_path }}"
+            echo "pyproject.toml → $(grep -oP '^version = \"\K[^"]+' "${{ inputs.pyproject_path }}")"
+          fi
+
+          if [ "${{ inputs.enable_package_xml }}" = "true" ]; then
+            sed -i "s/<version>[0-9.]*<\/version>/<version>${VER}<\/version>/" "${{ inputs.package_xml_path }}"
+            echo "package.xml → $(grep -oP '(?<=<version>)[^<]+' "${{ inputs.package_xml_path }}")"
+          fi
+
+      - name: Commit and push
+        run: |
+          TAG="${{ inputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "Already in sync" && exit 0
+          git commit -m "chore: sync version to ${TAG} [skip ci]"
+          git push
