@@ -8,7 +8,7 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 
 - **Diff-aware** — only files changed in the PR are checked; legacy code never blocks merges
 - **C++ quality** — clang-tidy, cppcheck, clang-format, flawfinder inside your Docker image
-- **Infrastructure lint** — ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan (no Docker image needed)
+- **Infrastructure lint** — ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection (no Docker image needed)
 - **Runtime analysis** — ASan/UBSan, TSan, gcov/lcov coverage, IWYU (all opt-in)
 - **Python quality** — ruff/flake8 + pytest + diff-cover on changed lines
 - **Security scanning** — Semgrep, CodeQL, Infer, pip-audit
@@ -28,7 +28,7 @@ Every PR gets an auto-updating emoji scoreboard comment from each workflow:
 | **C++ Quality** | clang-tidy, cppcheck, clang-format, flawfinder, ASan/UBSan, TSan, coverage, IWYU, hardening, file naming, banned patterns | `cpp-quality.yml` |
 | **Python Quality** | ruff/flake8 lint, pytest, diff-cover | `python-quality.yml` |
 | **Python SAST** | Semgrep, pip-audit, CodeQL | `sast-python.yml` |
-| **Infrastructure** | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan | `infra-lint.yml` |
+| **Infrastructure** | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets | `infra-lint.yml` |
 | **Supply Chain** | Container SBOM, source SBOM, Grype vulnerabilities, license compliance | `sbom.yml` |
 | **Versioning** | SemVer in package.xml, CMakeLists.txt, pyproject.toml | `version-check.yml` |
 | **Release** | Auto-tag + GitHub Release on push to main | `auto-release.yml` |
@@ -86,7 +86,7 @@ jobs:
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
 | [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, sanitizers, TSAN, coverage, IWYU, hardening, file naming, banned patterns |
-| [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files), dangerous-workflow audit, binary-artifact scan |
+| [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files), dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
@@ -213,7 +213,7 @@ jobs:
 </details>
 
 <details>
-<summary><strong>Infra Lint Inputs</strong> (12 inputs)</summary>
+<summary><strong>Infra Lint Inputs</strong> (14 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -225,10 +225,12 @@ jobs:
 | `cmake_lint_config` | `''` | Path to .cmake-format.yaml config file |
 | `enable_dangerous_workflows` | `false` | Enable dangerous-workflow pattern audit (opt-in) |
 | `enable_binary_artifacts` | `false` | Enable binary artifact detection in PRs (opt-in) |
+| `enable_gitleaks` | `false` | Enable Gitleaks secrets detection (opt-in) |
+| `gitleaks_config` | `''` | Path to .gitleaks.toml config file |
 | `exclude_file` | `''` | Path to file listing excluded paths (one per line, `#` comments) |
 | `base_ref` | `''` | Base branch for diff |
 | `runner` | `ubuntu-latest` | Runner labels as JSON |
-| `select_jobs` | `all` | Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts) |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts, gitleaks) |
 
 </details>
 
@@ -437,7 +439,7 @@ Generate project scaffolding from the standard:
 ```
 .github/workflows/
   cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 14+ opt-in checks)
-  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan)
+  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)

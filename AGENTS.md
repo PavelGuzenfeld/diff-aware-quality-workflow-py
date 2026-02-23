@@ -11,7 +11,7 @@ This repo provides reusable GitHub Actions workflows for diff-aware C++ and Pyth
 ```
 .github/workflows/
   cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 14+ opt-in checks)
-  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan)
+  infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)

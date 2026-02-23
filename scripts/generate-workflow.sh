@@ -161,6 +161,7 @@ enable_hadolint=n
 enable_cmake_lint=n
 enable_dangerous_workflows=n
 enable_binary_artifacts=n
+enable_gitleaks=n
 
 echo ""
 echo "--- Infrastructure lint ---"
@@ -171,9 +172,10 @@ if [[ "$enable_cpp" == "y" ]]; then
 fi
 ask "  Dangerous-workflow audit (CI injection patterns)?" "n" enable_dangerous_workflows
 ask "  Binary artifact detection (committed binaries)?" "n" enable_binary_artifacts
+ask "  Gitleaks secrets detection (API keys, tokens, passwords)?" "n" enable_gitleaks
 
 enable_infra=n
-[[ "$enable_shellcheck" == "y" || "$enable_hadolint" == "y" || "$enable_cmake_lint" == "y" || "$enable_dangerous_workflows" == "y" || "$enable_binary_artifacts" == "y" ]] && enable_infra=y
+[[ "$enable_shellcheck" == "y" || "$enable_hadolint" == "y" || "$enable_cmake_lint" == "y" || "$enable_dangerous_workflows" == "y" || "$enable_binary_artifacts" == "y" || "$enable_gitleaks" == "y" ]] && enable_infra=y
 
 # --- Create output directory --------------------------------------------------
 
@@ -346,6 +348,7 @@ HEADER
         [[ "$enable_cmake_lint" == "y" ]]          && echo "      enable_cmake_lint: true"
         [[ "$enable_dangerous_workflows" == "y" ]] && echo "      enable_dangerous_workflows: true"
         [[ "$enable_binary_artifacts" == "y" ]]    && echo "      enable_binary_artifacts: true"
+        [[ "$enable_gitleaks" == "y" ]]            && echo "      enable_gitleaks: true"
 
         echo "    permissions:"
         echo "      actions: read"

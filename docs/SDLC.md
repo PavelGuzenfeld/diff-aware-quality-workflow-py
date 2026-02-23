@@ -19,6 +19,7 @@ This document describes the full quality and security process enforced by this t
    diff-file-naming.sh           ShellCheck (shell scripts)
                                   Hadolint (Dockerfiles)
                                   cmake-lint (CMake files)
+                                  Gitleaks (secrets detection)
  CMake presets
                                 security & supply chain
    debug-asan                    dangerous-workflow audit
@@ -159,13 +160,14 @@ Only files changed in the PR are checked. Detection uses `git diff --name-only -
 | CMake file linting | cmake-lint | `infra-lint.yml` (Host) | Opt-in |
 | Dangerous-workflow audit | custom script | `infra-lint.yml` (Host) | Opt-in |
 | Binary-artifact scan | custom script | `infra-lint.yml` (Host) | Opt-in |
+| Secrets detection | Gitleaks | `infra-lint.yml` (Host) | Opt-in |
 | ASan + UBSan | sanitizer build | `cpp-quality.yml` (Docker) | Opt-in |
 | Thread safety | TSan | `cpp-quality.yml` (Docker) | Opt-in |
 | Code coverage | gcov/lcov + diff-cover | `cpp-quality.yml` (Docker) | Opt-in |
 | Include analysis | IWYU | `cpp-quality.yml` (Docker) | Opt-in |
 | Hardening verification | readelf (PIE, RELRO, NX, canary) | `cpp-quality.yml` (Docker) | Opt-in |
 
-clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Infrastructure lints (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan) run on the host. Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
+clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Infrastructure lints (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection) run on the host. Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
 
 ### Diff-Aware Linting (Python)
 
@@ -364,7 +366,7 @@ Standalone script: `scripts/check-hardening.sh <binary_path>...`
 |-------|---------|--------|
 | Pre-commit | `git commit` | clang-format, clang-tidy, cppcheck, whitespace, YAML |
 | PR (C++) | Pull request | clang-tidy, cppcheck, clang-format, flawfinder, file naming, banned patterns |
-| PR (Infra) | Pull request | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan (all opt-in) |
+| PR (Infra) | Pull request | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection (all opt-in) |
 | PR (Runtime) | Pull request | ASan/UBSan, TSan, coverage, IWYU (all opt-in) |
 | PR (Python) | Pull request | ruff/flake8, pytest, diff-cover |
 | PR (SAST) | Pull request | Semgrep, pip-audit, CodeQL (optional) |

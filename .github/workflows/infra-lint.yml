@@ -47,10 +47,18 @@ on:
         type: boolean
         default: false
         description: 'Enable binary artifact detection in PRs (opt-in)'
+      enable_gitleaks:
+        type: boolean
+        default: false
+        description: 'Enable Gitleaks secrets detection (opt-in)'
+      gitleaks_config:
+        type: string
+        default: ''
+        description: 'Path to .gitleaks.toml config file (empty = defaults)'
       select_jobs:
         type: string
         default: 'all'
-        description: 'Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts)'
+        description: 'Comma-separated jobs to run (all, shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts, gitleaks)'
 
 permissions:
   actions: read
@@ -461,10 +469,58 @@ jobs:
             echo "binary-artifacts: no binaries detected."
           fi
 
+  gitleaks:
+    name: Gitleaks
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    if: inputs.enable_gitleaks && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'gitleaks'))
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION="v8.21.2"
+          curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION#v}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          chmod +x /tmp/gitleaks
+          /tmp/gitleaks version
+
+      - name: Scan for secrets
+        id: scan
+        run: |
+          BASE_REF="${{ inputs.base_ref || github.base_ref || 'main' }}"
+
+          CONFIG_ARG=""
+          if [ -n "${{ inputs.gitleaks_config }}" ] && [ -f "${{ inputs.gitleaks_config }}" ]; then
+            CONFIG_ARG="--config ${{ inputs.gitleaks_config }}"
+          fi
+
+          /tmp/gitleaks detect --source=. --log-opts="origin/${BASE_REF}..HEAD" \
+            --report-path=/tmp/gitleaks-report.json --report-format=json \
+            $CONFIG_ARG --exit-code=0 || true
+
+          VIOLATIONS=0
+          if [ -f /tmp/gitleaks-report.json ] && [ -s /tmp/gitleaks-report.json ]; then
+            VIOLATIONS=$(jq 'length' /tmp/gitleaks-report.json)
+            jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::Gitleaks: \(.Description) [\(.RuleID)] — match: \(.Match | tostring | .[0:40])"' /tmp/gitleaks-report.json
+          fi
+
+          echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "gitleaks: $VIOLATIONS secret(s) detected."
+            exit 1
+          else
+            echo "gitleaks: no secrets detected."
+          fi
+
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts]
+    needs: [shellcheck, hadolint, cmake-lint, dangerous-workflows, binary-artifacts, gitleaks]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -477,6 +533,7 @@ jobs:
             const cmake = '${{ needs.cmake-lint.result }}';
             const dw = '${{ needs.dangerous-workflows.result }}';
             const ba = '${{ needs.binary-artifacts.result }}';
+            const gl = '${{ needs.gitleaks.result }}';
 
             const icon = (r) => {
               if (r === 'success') return '✅';
@@ -507,6 +564,9 @@ jobs:
             }
             if (ba && ba !== 'skipped') {
               rows.push(`| Binary Artifacts | ${icon(ba)} ${label(ba)} |`);
+            }
+            if (gl && gl !== 'skipped') {
+              rows.push(`| Gitleaks | ${icon(gl)} ${label(gl)} |`);
             }
 
             if (rows.length === 0) return;

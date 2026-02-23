@@ -699,7 +699,36 @@ with:
 
 This flags committed binary files (`.exe`, `.dll`, `.so`, `.jar`, `.pyc`, `.whl`, etc.) in PRs.
 
-### 5. Enable SLSA Provenance
+### 5. Enable Gitleaks Secrets Detection
+
+Add to your infra-lint workflow call:
+
+```yaml
+with:
+  enable_gitleaks: true
+```
+
+This scans PR commits for leaked secrets (API keys, tokens, passwords, private keys) using [Gitleaks](https://github.com/gitleaks/gitleaks). Only commits in the PR range are scanned (diff-aware).
+
+To customize detection rules or add allowlists, create a `.gitleaks.toml` in your repo root:
+
+```toml
+[allowlist]
+  paths = [
+    '''tests/fixtures/.*''',
+    '''docs/examples/.*''',
+  ]
+```
+
+Then pass it to the workflow:
+
+```yaml
+with:
+  enable_gitleaks: true
+  gitleaks_config: .gitleaks.toml
+```
+
+### 6. Enable SLSA Provenance
 
 Add to your release workflow call:
 

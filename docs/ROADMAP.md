@@ -33,6 +33,7 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | cmake-lint | CMake file linting (`CMakeLists.txt`, `*.cmake`) | Opt-in, report-only |
 | Dangerous-workflow audit | Detects `pull_request_target` misuse and injection patterns | Opt-in |
 | Binary-artifact scan | Detects committed binary files (`.exe`, `.dll`, `.so`, etc.) | Opt-in |
+| Gitleaks | Secrets detection (API keys, tokens, passwords, private keys) | Opt-in |
 
 **Python:**
 
@@ -289,6 +290,7 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | cmake-lint (CMake files) | Done | infra-lint.yml |
 | Dangerous-workflow audit | Done | infra-lint.yml |
 | Binary-artifact scan | Done | infra-lint.yml |
+| Gitleaks secrets detection | Done | infra-lint.yml |
 | SLSA provenance attestation | Done | auto-release.yml |
 | SECURITY.md + template | Done | - |
 | Dependabot config + template | Done | - |
