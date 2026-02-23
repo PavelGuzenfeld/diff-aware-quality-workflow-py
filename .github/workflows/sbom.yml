@@ -127,7 +127,7 @@ jobs:
           sparse-checkout: ${{ inputs.grype_ignore_file }}
 
       - name: Download container SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: container-sbom
 
@@ -174,12 +174,12 @@ jobs:
             ${{ inputs.license_check_script || inputs.license_policy_file }}
 
       - name: Download container SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: container-sbom
 
       - name: Download source SBOM
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: source-sbom
         continue-on-error: true
