@@ -1250,7 +1250,7 @@ jobs:
 
       - name: Upload results
         if: always() && steps.changed.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flawfinder-results
           path: |
@@ -1766,7 +1766,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: |

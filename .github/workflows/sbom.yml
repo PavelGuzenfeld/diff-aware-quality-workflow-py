@@ -75,7 +75,7 @@ jobs:
           upload-artifact: false
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: container-sbom
           path: |
@@ -109,7 +109,7 @@ jobs:
         run: python3 "${{ inputs.source_sbom_script }}" --output source-sbom.cdx.json
 
       - name: Upload source SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: source-sbom
           path: source-sbom.cdx.json
@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload Grype report
         if: always() && steps.grype.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: grype-report
           path: results.sarif
@@ -476,7 +476,7 @@ jobs:
 
       - name: Upload license report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: license-report
           path: license-report.json
