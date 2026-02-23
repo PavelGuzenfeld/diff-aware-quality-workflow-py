@@ -109,6 +109,7 @@ enable_sanitizers=n
 enable_tsan=n
 enable_coverage=n
 enable_iwyu=n
+enable_fuzz=n
 
 if [[ "$enable_cpp" == "y" ]]; then
     echo ""

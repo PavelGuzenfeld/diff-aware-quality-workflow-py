@@ -224,7 +224,7 @@ jobs:
 </details>
 
 <details>
-<summary><strong>Python Inputs</strong> (8 inputs)</summary>
+<summary><strong>Python Inputs</strong> (10 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
@@ -234,18 +234,21 @@ jobs:
 | `source_dirs` | `src` | Source directories |
 | `test_dirs` | `tests` | Test directories |
 | `ruff_select` | `E,W,F,I` | Ruff rule selection |
+| `enable_tests` | `true` | Run pytest and collect coverage (disable for projects with external test deps like ROS2) |
+| `base_ref` | `''` | Base branch for diff comparison (falls back to github.base_ref, then main) |
 | `fail_under` | `100` | Minimum diff-quality score (0-100) |
 | `runner` | `ubuntu-latest` | Runner label |
 
 </details>
 
 <details>
-<summary><strong>Python SAST Inputs</strong> (8 inputs)</summary>
+<summary><strong>Python SAST Inputs</strong> (9 inputs)</summary>
 
 | Input | Default | Description |
 |-------|---------|-------------|
 | `python_version` | `3.12` | Python version to use |
 | `enable_semgrep` | `true` | Enable Semgrep security scanning |
+| `semgrep_version` | `1.150.0` | Semgrep Docker image version (pin to avoid breaking changes) |
 | `semgrep_rules` | `p/python p/owasp-top-ten` | Semgrep rule sets |
 | `enable_pip_audit` | `true` | Enable pip-audit CVE scanning |
 | `requirements_file` | `requirements.txt` | Path to requirements file |

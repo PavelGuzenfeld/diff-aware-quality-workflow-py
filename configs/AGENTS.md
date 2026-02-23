@@ -238,14 +238,23 @@ Every project integrating this standard must have a quality workflow in `.github
 
 - `ci-codeql.yml` — GitHub CodeQL analysis
 - `ci-infer.yml` — Facebook Infer static analysis (C++)
-- `ci-fuzz.yml` — libFuzzer continuous fuzzing
+- `ci-fuzz.yml` — libFuzzer continuous fuzzing with corpus caching
 - `ci-multi-compiler.yml` — GCC + Clang multi-compiler builds
+- `infra-lint.yml` — ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan
+- `sbom.yml` — Syft container SBOM, Grype vulnerability scanning, license check
+- `auto-release.yml` — Conventional-commit version bumps, GitHub Releases, SLSA provenance
 
 ### Verification
 
 Confirm `.github/workflows/` contains the quality workflow for your language(s).
 
 Full setup instructions: see `INTEGRATION.md`.
+
+## Security Hygiene
+
+- **SECURITY.md** — must exist at repo root with vulnerability reporting instructions
+- **Dependabot** — `.github/dependabot.yml` monitors dependency updates (GitHub Actions, pip, etc.)
+- **SLSA provenance** — opt-in attestation on releases via `auto-release.yml` with `enable_provenance: true`
 
 ## Git & PR Rules
 

@@ -185,49 +185,32 @@ PR opened / weekly schedule
 
 ### Reusable Workflow: `sbom.yml`
 
-10 inputs following existing conventions:
+8 inputs following existing conventions:
 
 | Input | Default | Description |
 |-------|---------|-------------|
 | `docker_image` | *required* | Docker image to scan |
-| `enable_container_scan` | `true` | Syft container image scan |
-| `enable_source_scan` | `true` | Source-level dependency scan |
-| `enable_grype` | `true` | Grype vulnerability scanning |
-| `grype_fail_on` | `critical` | Severity threshold to fail (negligible/low/medium/high/critical) |
-| `grype_ignore_file` | `''` | Path to .grype.yaml for CVE suppressions |
-| `source_scan_config` | `''` | Path to sbom-config.yml overrides |
-| `scan_depth` | `2` | Max depth for recursive .gitmodules scan |
-| `python_version` | `3.12` | Python version for source scanner |
-| `runner` | `ubuntu-latest` | Runner label |
+| `source_sbom_script` | `''` | Path to source-level SBOM generation script (empty = skip) |
+| `grype_fail_on` | `''` | Fail on severity: "" = report-only, "critical", "high", "medium", "low" |
+| `grype_ignore_file` | `''` | Path to .grype.yaml ignore file |
+| `checkout_submodules` | `false` | Checkout submodules for source SBOM (true/false/recursive) |
+| `license_policy_file` | `''` | Path to license policy YAML (empty = skip license check) |
+| `license_check_script` | `''` | Path to license check Python script in caller repo |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
 
 ### Jobs
 
 4 jobs + summary:
 
-1. **container-scan** — Syft scans Docker image, produces SPDX + CycloneDX JSON
-2. **source-scan** — Custom Python script parses source manifests, produces CycloneDX JSON
-3. **merge-sboms** — Merges container + source SBOMs, deduplicates by (name, version)
-4. **vulnerability-scan** — Grype scans merged SBOM, fails on severity threshold
+1. **container-sbom** — Syft scans Docker image, produces SPDX + CycloneDX JSON
+2. **source-sbom** — Custom script parses source manifests, produces CycloneDX JSON
+3. **vuln-scan** — Grype scans SBOM, fails on severity threshold
+4. **license-check** — Validates dependency licenses against policy
 5. **summary** — PR comment with dependency count + vulnerability table
 
-### Source Scanner: `scripts/source-sbom.py`
+### Source SBOM
 
-Python stdlib only (no pip deps). Parses:
-
-| Source | Files | PURL Pattern |
-|--------|-------|-------------|
-| CMake FetchContent | `**/CMakeLists.txt` | `pkg:github/{owner}/{repo}@{tag}` |
-| Git submodules | `**/.gitmodules` | `pkg:github/{owner}/{repo}` |
-| ROS2 packages | `**/package.xml` | `pkg:ros/{distro}/{name}` |
-| Python deps | `**/pyproject.toml` | `pkg:pypi/{name}@{version}` |
-| Python reqs | `**/requirements*.txt` | `pkg:pypi/{name}@{version}` |
-
-### Config Template: `configs/sbom-config.yml`
-
-Optional config for consuming repos:
-- `exclude_paths` — glob patterns to skip (build/, install/, .git/)
-- `ros_distro` — ROS2 distro name for PURL (default: humble)
-- `extra_components` — manually declared deps not discoverable from source (e.g., libs built from source in Docker)
+The workflow accepts a `source_sbom_script` input — a path to a caller-provided script that generates a CycloneDX JSON SBOM from source-level manifests (CMake FetchContent, .gitmodules, package.xml, pyproject.toml, etc.). If empty, the source scan step is skipped.
 
 ### Consumer Usage
 
@@ -238,7 +221,7 @@ jobs:
     with:
       docker_image: ghcr.io/my-org/my-image:latest
       grype_fail_on: critical
-      source_scan_config: sbom-config.yml
+      license_policy_file: .license-policy.yml
     permissions:
       contents: read
       pull-requests: write
@@ -251,7 +234,7 @@ jobs:
 |------|------|-----|
 | **Syft** (Anchore) | SBOM generation from containers | Dual SPDX+CycloneDX output, lightweight Go binary, official GitHub Action |
 | **Grype** (Anchore) | Vulnerability scanning | Consumes Syft output natively, configurable thresholds, CVE suppressions |
-| **source-sbom.py** | Source manifest parsing | No existing tool covers CMake FetchContent + ROS2 package.xml + .gitmodules together |
+| **source_sbom_script** | Source manifest parsing | Caller-provided script for project-specific manifests (CMake FetchContent, ROS2 package.xml, .gitmodules, etc.) |
 
 ### Output Formats
 
