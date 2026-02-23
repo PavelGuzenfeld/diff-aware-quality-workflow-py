@@ -40,22 +40,21 @@ on:
         default: '"ubuntu-latest"'
         description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
 
-permissions:
-  actions: read
-  contents: read
-  pull-requests: write
-  security-events: write
+permissions: read-all
 
 jobs:
   semgrep:
     name: Semgrep
     if: inputs.enable_semgrep
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      contents: read
+      security-events: write
     container:
       image: semgrep/semgrep:${{ inputs.semgrep_version }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Run Semgrep
         run: semgrep scan --config ${{ inputs.semgrep_rules }} --sarif --output=semgrep.sarif --error
@@ -64,7 +63,7 @@ jobs:
 
       - name: Upload SARIF
         if: always() && steps.semgrep-scan.outcome != 'skipped'
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -76,10 +75,10 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python ${{ inputs.python_version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ inputs.python_version }}
           cache: 'pip'
@@ -93,36 +92,41 @@ jobs:
 
       - name: Run pip-audit
         id: audit
-        uses: pypa/gh-action-pip-audit@v1.1.0
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         continue-on-error: true
 
   codeql:
     name: CodeQL
     if: inputs.enable_codeql
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
         with:
           languages: python
           queries: ${{ inputs.codeql_queries }}
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
         with:
           category: python-sast
 
   summary:
     name: SAST Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      pull-requests: write
     needs: [semgrep, pip-audit, codeql]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = '<!-- python-sast-report -->';

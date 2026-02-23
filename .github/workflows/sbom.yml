@@ -36,20 +36,18 @@ on:
         default: ''
         description: 'Path to license check Python script in caller repo'
 
-permissions:
-  actions: read
-  contents: read
-  packages: read
-  pull-requests: write
-  security-events: write
+permissions: read-all
 
 jobs:
   container-sbom:
     name: Container SBOM
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -59,7 +57,7 @@ jobs:
         run: docker pull "${{ inputs.docker_image }}"
 
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@v0.22.2
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
         with:
           image: ${{ inputs.docker_image }}
           format: spdx-json
@@ -67,7 +65,7 @@ jobs:
           upload-artifact: false
 
       - name: Generate CycloneDX SBOM
-        uses: anchore/sbom-action@v0.22.2
+        uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
         with:
           image: ${{ inputs.docker_image }}
           format: cyclonedx-json
@@ -75,7 +73,7 @@ jobs:
           upload-artifact: false
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: container-sbom
           path: |
@@ -89,7 +87,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Checkout submodules (best-effort)
         if: inputs.checkout_submodules != 'false'
@@ -109,7 +107,7 @@ jobs:
         run: python3 "${{ inputs.source_sbom_script }}" --output source-sbom.cdx.json
 
       - name: Upload source SBOM
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: source-sbom
           path: source-sbom.cdx.json
@@ -122,18 +120,18 @@ jobs:
     steps:
       - name: Check out repository
         if: inputs.grype_ignore_file != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           sparse-checkout: ${{ inputs.grype_ignore_file }}
 
       - name: Download container SBOM
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: container-sbom
 
       - name: Run Grype vulnerability scan
         id: grype
-        uses: anchore/scan-action@v7
+        uses: anchore/scan-action@7037fa011853d5a11690026fb85feee79f4c946c # v7
         with:
           sbom: container-sbom-cdx.json
           fail-build: ${{ inputs.grype_fail_on != '' }}
@@ -143,7 +141,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security
         if: always() && steps.grype.outcome != 'skipped'
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
         with:
           sarif_file: results.sarif
           category: grype-vuln-scan
@@ -151,7 +149,7 @@ jobs:
 
       - name: Upload Grype report
         if: always() && steps.grype.outcome != 'skipped'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: grype-report
           path: results.sarif
@@ -167,19 +165,19 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           sparse-checkout: |
             ${{ inputs.license_policy_file }}
             ${{ inputs.license_check_script || inputs.license_policy_file }}
 
       - name: Download container SBOM
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: container-sbom
 
       - name: Download source SBOM
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: source-sbom
         continue-on-error: true
@@ -476,7 +474,7 @@ jobs:
 
       - name: Upload license report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: license-report
           path: license-report.json
@@ -485,11 +483,13 @@ jobs:
   summary:
     name: SBOM Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      pull-requests: write
     needs: [container-sbom, source-sbom, vuln-scan, license-check]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = '<!-- sbom-report -->';

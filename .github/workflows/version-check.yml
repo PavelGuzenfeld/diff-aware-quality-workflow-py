@@ -16,13 +16,18 @@ on:
         default: '"ubuntu-latest"'
         description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
 
+permissions: read-all
+
 jobs:
   version-check:
     name: Version Check
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -129,7 +134,7 @@ jobs:
 
       - name: Post or update PR comment
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           VC_SKIP: ${{ steps.changed.outputs.skip }}
           VC_CHECKED: ${{ steps.validate.outputs.checked }}

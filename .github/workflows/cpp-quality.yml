@@ -244,12 +244,7 @@ on:
         default: ''
         description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
 
-permissions:
-  actions: read
-  contents: read
-  packages: read
-  pull-requests: write
-  security-events: write
+permissions: read-all
 
 jobs:
   verify-toolchain:
@@ -257,7 +252,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: ${{ inputs.checkout_submodules }}
 
@@ -351,7 +346,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -417,7 +412,7 @@ jobs:
 
       - name: Restore build cache
         if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}
@@ -508,7 +503,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -649,7 +644,7 @@ jobs:
     if: inputs.enable_clang_format && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'clang-format'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -769,7 +764,7 @@ jobs:
     if: inputs.enforce_doctest && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'doctest'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -864,7 +859,7 @@ jobs:
     if: inputs.enable_file_naming && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'file-naming'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -1020,7 +1015,7 @@ jobs:
     if: inputs.ban_cout && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'cout-ban'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -1098,7 +1093,7 @@ jobs:
     if: inputs.ban_new && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'new-delete-ban'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -1182,10 +1177,13 @@ jobs:
   flawfinder:
     name: flawfinder
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      contents: read
+      security-events: write
     if: inputs.enable_flawfinder && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'flawfinder'))
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -1270,7 +1268,7 @@ jobs:
 
       - name: Upload results
         if: always() && steps.changed.outputs.skip == 'false'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: flawfinder-results
           path: |
@@ -1281,7 +1279,7 @@ jobs:
       - name: Upload SARIF
         if: always() && steps.changed.outputs.skip == 'false' && inputs.enable_sarif
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4
         with:
           sarif_file: flawfinder.sarif
           category: flawfinder
@@ -1293,7 +1291,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -1314,7 +1312,7 @@ jobs:
 
       - name: Restore build cache
         if: inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}-sanitizer
@@ -1403,7 +1401,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -1424,7 +1422,7 @@ jobs:
 
       - name: Restore build cache
         if: inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}-tsan
@@ -1514,7 +1512,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -1580,7 +1578,7 @@ jobs:
 
       - name: Restore build cache
         if: steps.changed.outputs.skip == 'false' && inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}
@@ -1654,7 +1652,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -1675,7 +1673,7 @@ jobs:
 
       - name: Restore build cache
         if: inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}-coverage
@@ -1786,7 +1784,7 @@ jobs:
 
       - name: Upload coverage artifacts
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-report
           path: |
@@ -1802,7 +1800,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           submodules: ${{ inputs.checkout_submodules }}
@@ -1823,7 +1821,7 @@ jobs:
 
       - name: Restore build cache
         if: inputs.build_cache_key != ''
-        uses: actions/cache@v5
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
         with:
           path: ${{ steps.cache-paths.outputs.paths }}
           key: ${{ inputs.build_cache_key }}-hardening
@@ -2035,11 +2033,13 @@ jobs:
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      pull-requests: write
     needs: [verify-toolchain, clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage, hardening]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = '<!-- cpp-quality-report -->';

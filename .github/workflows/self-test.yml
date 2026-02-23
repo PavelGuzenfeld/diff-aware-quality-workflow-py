@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [main]
 
+permissions: read-all
+
 jobs:
   python-quality:
     uses: ./.github/workflows/python-quality.yml
