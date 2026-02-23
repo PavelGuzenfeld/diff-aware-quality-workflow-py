@@ -128,9 +128,21 @@ jobs:
           NEXT="${{ steps.version.outputs.next }}"
           gh release create "$NEXT" --generate-notes --title "$NEXT"
 
+      - name: Compute release tarball digest
+        if: steps.bump.outputs.skip != 'true' && inputs.enable_provenance
+        id: digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEXT="${{ steps.version.outputs.next }}"
+          gh release download "$NEXT" --archive=tar.gz --output /tmp/release.tar.gz
+          SHA256=$(sha256sum /tmp/release.tar.gz | awk '{print $1}')
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "Tarball SHA-256: $SHA256"
+
       - name: Attest release provenance
         if: steps.bump.outputs.skip != 'true' && inputs.enable_provenance
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ github.repository }}
-          subject-digest: sha256:${{ github.sha }}
+          subject-name: ${{ github.repository }}-source-${{ steps.version.outputs.next }}.tar.gz
+          subject-digest: sha256:${{ steps.digest.outputs.sha256 }}
