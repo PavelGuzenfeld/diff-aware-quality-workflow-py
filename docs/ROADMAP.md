@@ -248,11 +248,15 @@ All uploaded as GitHub Actions artifacts.
 
 ---
 
-## Planned: Trend Dashboard
+## Trend Dashboard
 
-- Weekly scheduled workflow aggregates scan results
-- Posts trend report to Slack/Jira dashboard
-- Tracks: total findings over time, new vs fixed per sprint, findings by package
+Reusable workflow: [`trend-dashboard.yml`](../.github/workflows/trend-dashboard.yml)
+
+- Weekly scheduled workflow aggregates scan results across all standard workflows
+- Queries GitHub Actions API for historical workflow runs and per-job results
+- Calculates pass rates per check per week with trend arrows (↑ ↓ →)
+- Posts trend report to workflow summary, Slack (opt-in), and/or GitHub Discussions (opt-in)
+- Auto-discovers which standard workflows the consumer uses
 
 ## Full-Codebase Scan Mode (Local)
 
@@ -306,4 +310,4 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | README badge generator (generate-badges.sh) | Done | - |
 | AGENTS.md generator (generate-agents-md.sh) | Done | - |
 | Binary hardening verification | Done | cpp-quality.yml |
-| Trend dashboard | Planned | - |
+| Trend dashboard | Done | trend-dashboard.yml |

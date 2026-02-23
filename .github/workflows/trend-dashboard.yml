@@ -1,0 +1,377 @@
+# trend-dashboard.yml — Reusable workflow: weekly quality trend report.
+#
+# Queries GitHub Actions API for historical workflow run results,
+# aggregates pass/fail rates per check, and posts a trend report
+# to Slack, GitHub Discussions, and/or the workflow summary.
+#
+# NOTE: `on: schedule` cannot be used in reusable workflows.
+# The caller must define the schedule trigger:
+#
+#   name: Trend Dashboard
+#   on:
+#     schedule:
+#       - cron: '0 9 * * 1'  # Weekly Monday 9am UTC
+#     workflow_dispatch:
+#   jobs:
+#     trends:
+#       uses: PavelGuzenfeld/standard/.github/workflows/trend-dashboard.yml@main
+#       with:
+#         lookback_days: 28
+#       permissions:
+#         actions: read
+#         contents: read
+
+name: Trend Dashboard
+
+on:
+  workflow_call:
+    inputs:
+      lookback_days:
+        type: number
+        default: 28
+        description: 'Number of days of history to analyze'
+      slack_webhook_url:
+        type: string
+        default: ''
+        description: 'Slack webhook URL for posting trend report (empty = skip)'
+      post_to_discussions:
+        type: boolean
+        default: false
+        description: 'Post trend report as a GitHub Discussion (opt-in)'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+
+permissions:
+  actions: read
+  contents: read
+  discussions: write
+
+jobs:
+  trend-report:
+    name: Trend Report
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Generate trend report
+        id: report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // --- Configuration ---
+            const lookbackDays = ${{ inputs.lookback_days }};
+            const sinceDate = new Date();
+            sinceDate.setDate(sinceDate.getDate() - lookbackDays);
+            const sinceISO = sinceDate.toISOString().split('T')[0];
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Known standard workflow filenames to look for
+            const knownWorkflows = [
+              'cpp-quality.yml',
+              'infra-lint.yml',
+              'python-quality.yml',
+              'sast-python.yml',
+              'sbom.yml',
+              'version-check.yml',
+            ];
+
+            // --- Discover workflows ---
+            // List all workflows and filter to known standard ones
+            const allWorkflows = await github.paginate(
+              github.rest.actions.listRepoWorkflows,
+              { owner, repo, per_page: 100 }
+            );
+
+            const standardWorkflows = allWorkflows.filter(wf =>
+              knownWorkflows.some(known => wf.path.endsWith(known))
+            );
+
+            if (standardWorkflows.length === 0) {
+              const msg = 'No standard workflows found in this repository.';
+              core.summary.addRaw(msg);
+              await core.summary.write();
+              core.setOutput('report', msg);
+              return;
+            }
+
+            // --- Query runs per workflow ---
+            const allRuns = [];
+
+            for (const wf of standardWorkflows) {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner,
+                  repo,
+                  workflow_id: wf.id,
+                  created: `>=${sinceISO}`,
+                  per_page: 100,
+                }
+              );
+              for (const run of runs) {
+                allRuns.push({ workflow: wf.name, run });
+              }
+            }
+
+            if (allRuns.length === 0) {
+              const msg = `No workflow runs found in the last ${lookbackDays} days.`;
+              core.summary.addRaw(msg);
+              await core.summary.write();
+              core.setOutput('report', msg);
+              return;
+            }
+
+            // --- Query jobs per run ---
+            // Collect per-job results: { jobName, conclusion, weekBucket }
+            const jobResults = [];
+
+            for (const { workflow, run } of allRuns) {
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              for (const job of jobs.data.jobs) {
+                // Skip summary/setup jobs that don't represent real checks
+                if (job.name.toLowerCase() === 'summary') continue;
+
+                const runDate = new Date(run.created_at);
+                jobResults.push({
+                  workflow,
+                  jobName: job.name,
+                  conclusion: job.conclusion,
+                  date: runDate,
+                });
+              }
+            }
+
+            // --- Bucket by week ---
+            const numWeeks = Math.ceil(lookbackDays / 7);
+            const now = new Date();
+
+            function weekBucket(date) {
+              const daysAgo = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+              const week = Math.floor(daysAgo / 7);
+              return Math.min(week, numWeeks - 1);
+            }
+
+            // Build per-check per-week stats
+            // Map: checkName -> weekIndex -> { pass, total }
+            const checkStats = new Map();
+            const checkTotals = new Map();
+
+            for (const jr of jobResults) {
+              const key = jr.jobName;
+              if (!checkStats.has(key)) {
+                checkStats.set(key, new Map());
+                checkTotals.set(key, { pass: 0, total: 0 });
+              }
+
+              const weekIdx = weekBucket(jr.date);
+              const weekMap = checkStats.get(key);
+              if (!weekMap.has(weekIdx)) {
+                weekMap.set(weekIdx, { pass: 0, total: 0 });
+              }
+
+              const bucket = weekMap.get(weekIdx);
+              bucket.total++;
+              if (jr.conclusion === 'success') bucket.pass++;
+
+              const totals = checkTotals.get(key);
+              totals.total++;
+              if (jr.conclusion === 'success') totals.pass++;
+            }
+
+            // --- Calculate metrics ---
+            function passRate(pass, total) {
+              if (total === 0) return null;
+              return Math.round((pass / total) * 100);
+            }
+
+            function trendArrow(rates) {
+              const valid = rates.filter(r => r !== null);
+              if (valid.length < 2) return '→';
+              const first = valid[0];
+              const last = valid[valid.length - 1];
+              const diff = last - first;
+              if (diff > 2) return '↑';
+              if (diff < -2) return '↓';
+              return '→';
+            }
+
+            // Week labels (most recent first, then reverse for table)
+            const weekLabels = [];
+            for (let i = numWeeks - 1; i >= 0; i--) {
+              const weekEnd = new Date(now);
+              weekEnd.setDate(weekEnd.getDate() - i * 7);
+              const weekStart = new Date(weekEnd);
+              weekStart.setDate(weekStart.getDate() - 6);
+              const fmt = d => `${d.getMonth() + 1}/${d.getDate()}`;
+              weekLabels.push(`${fmt(weekStart)}-${fmt(weekEnd)}`);
+            }
+
+            // Build table rows
+            const rows = [];
+            let totalPass = 0;
+            let totalRuns = 0;
+            let mostImproved = { name: '', delta: -Infinity };
+            const needsAttention = [];
+
+            for (const [check, weekMap] of [...checkStats.entries()].sort()) {
+              const rates = [];
+              for (let i = numWeeks - 1; i >= 0; i--) {
+                const bucket = weekMap.get(i);
+                if (bucket) {
+                  rates.push(passRate(bucket.pass, bucket.total));
+                } else {
+                  rates.push(null);
+                }
+              }
+
+              const trend = trendArrow(rates);
+              const rateStrs = rates.map(r => r === null ? '—' : `${r}%`);
+
+              rows.push({ check, rates, rateStrs, trend });
+
+              // Aggregate stats
+              const totals = checkTotals.get(check);
+              totalPass += totals.pass;
+              totalRuns += totals.total;
+
+              // Track most improved
+              const validRates = rates.filter(r => r !== null);
+              if (validRates.length >= 2) {
+                const delta = validRates[validRates.length - 1] - validRates[0];
+                if (delta > mostImproved.delta) {
+                  mostImproved = { name: check, delta };
+                }
+              }
+
+              // Track needs attention (any week with failures in recent 2 weeks)
+              const recentRates = rates.slice(-2).filter(r => r !== null);
+              if (recentRates.some(r => r < 100)) {
+                needsAttention.push(check);
+              }
+            }
+
+            const overallRate = passRate(totalPass, totalRuns);
+
+            // --- Generate markdown report ---
+            const today = now.toISOString().split('T')[0];
+            const periodStart = sinceDate.toISOString().split('T')[0];
+
+            let report = `## Quality Trend Report — ${periodStart} to ${today}\n\n`;
+
+            // Table header
+            const weekHeaders = weekLabels.map((_, i) => `W${i + 1}`);
+            report += `### Check Pass Rates (last ${numWeeks} weeks)\n\n`;
+            report += `| Check | ${weekHeaders.join(' | ')} | Trend |\n`;
+            report += `|-------|${weekHeaders.map(() => '------').join('|')}|-------|\n`;
+
+            for (const row of rows) {
+              report += `| ${row.check} | ${row.rateStrs.join(' | ')} | ${row.trend} |\n`;
+            }
+
+            report += '\n### Summary\n\n';
+            report += `- **Total workflow runs:** ${allRuns.length}\n`;
+            report += `- **Total job executions:** ${totalRuns}\n`;
+            report += `- **Overall pass rate:** ${overallRate}%\n`;
+
+            if (mostImproved.delta > 0) {
+              report += `- **Most improved:** ${mostImproved.name} (+${mostImproved.delta}%)\n`;
+            }
+
+            if (needsAttention.length > 0) {
+              report += `- **Needs attention:** ${needsAttention.join(', ')}\n`;
+            }
+
+            report += `\n---\nGenerated by [standard](https://github.com/PavelGuzenfeld/standard) trend-dashboard workflow\n`;
+
+            core.setOutput('report', report);
+
+            // --- Write to step summary ---
+            core.summary.addRaw(report);
+            await core.summary.write();
+
+      - name: Post to Slack
+        if: inputs.slack_webhook_url != ''
+        uses: actions/github-script@v7
+        env:
+          SLACK_WEBHOOK_URL: ${{ inputs.slack_webhook_url }}
+        with:
+          script: |
+            const report = `${{ steps.report.outputs.report }}`;
+            const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+
+            if (!webhookUrl) return;
+
+            await fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: report,
+              }),
+            });
+
+      - name: Post to Discussions
+        if: inputs.post_to_discussions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ steps.report.outputs.report }}`;
+            const today = new Date().toISOString().split('T')[0];
+            const title = `Quality Trend Report — ${today}`;
+
+            // Find "General" discussion category
+            const categories = await github.graphql(`
+              query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) {
+                  discussionCategories(first: 25) {
+                    nodes { id name }
+                  }
+                }
+              }
+            `, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const generalCat = categories.repository.discussionCategories.nodes.find(
+              c => c.name === 'General'
+            );
+
+            if (!generalCat) {
+              core.warning('No "General" discussion category found — skipping Discussion post.');
+              return;
+            }
+
+            // Get repository node ID
+            const repoData = await github.graphql(`
+              query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) { id }
+              }
+            `, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            await github.graphql(`
+              mutation($repoId: ID!, $catId: ID!, $title: String!, $body: String!) {
+                createDiscussion(input: {
+                  repositoryId: $repoId,
+                  categoryId: $catId,
+                  title: $title,
+                  body: $body
+                }) {
+                  discussion { url }
+                }
+              }
+            `, {
+              repoId: repoData.repository.id,
+              catId: generalCat.id,
+              title,
+              body: report,
+            });

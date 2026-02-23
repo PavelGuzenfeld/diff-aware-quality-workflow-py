@@ -748,6 +748,80 @@ This creates a SLSA provenance attestation for each release using `actions/attes
 
 ---
 
+## Trend Dashboard Setup
+
+The `trend-dashboard.yml` reusable workflow generates a weekly quality trend report by querying GitHub Actions API for historical workflow run results.
+
+### 1. Add the workflow
+
+Create `.github/workflows/trends.yml`:
+
+```yaml
+name: Trend Dashboard
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Weekly Monday 9am UTC
+  workflow_dispatch:
+
+jobs:
+  trends:
+    uses: PavelGuzenfeld/standard/.github/workflows/trend-dashboard.yml@main
+    permissions:
+      actions: read
+      contents: read
+```
+
+### 2. Optional: Slack notifications
+
+Add a Slack webhook URL to receive weekly reports in a Slack channel:
+
+```yaml
+jobs:
+  trends:
+    uses: PavelGuzenfeld/standard/.github/workflows/trend-dashboard.yml@main
+    with:
+      slack_webhook_url: ${{ secrets.SLACK_TRENDS_WEBHOOK }}
+    permissions:
+      actions: read
+      contents: read
+```
+
+### 3. Optional: GitHub Discussions
+
+Post the trend report as a GitHub Discussion:
+
+```yaml
+jobs:
+  trends:
+    uses: PavelGuzenfeld/standard/.github/workflows/trend-dashboard.yml@main
+    with:
+      post_to_discussions: true
+    permissions:
+      actions: read
+      contents: read
+      discussions: write
+```
+
+### 4. Inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `lookback_days` | `28` | Number of days of history to analyze |
+| `slack_webhook_url` | `''` | Slack webhook URL for posting trend report (empty = skip) |
+| `post_to_discussions` | `false` | Post trend report as a GitHub Discussion (opt-in) |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+
+### How it works
+
+1. Discovers which standard workflows exist in the repo (cpp-quality, infra-lint, python-quality, sast-python, sbom, version-check)
+2. Queries workflow runs from the last N days via GitHub Actions API
+3. Queries per-job results for each run to get individual check outcomes
+4. Buckets results into weekly bins and calculates pass rates
+5. Generates a markdown trend table with per-check pass rates and trend arrows (↑ ↓ →)
+6. Posts the report to the workflow summary, and optionally to Slack and/or Discussions
+
+---
+
 ## Workflow Inputs Reference
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).

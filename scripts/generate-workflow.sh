@@ -177,6 +177,13 @@ ask "  Gitleaks secrets detection (API keys, tokens, passwords)?" "n" enable_git
 enable_infra=n
 [[ "$enable_shellcheck" == "y" || "$enable_hadolint" == "y" || "$enable_cmake_lint" == "y" || "$enable_dangerous_workflows" == "y" || "$enable_binary_artifacts" == "y" || "$enable_gitleaks" == "y" ]] && enable_infra=y
 
+# Trend dashboard
+enable_trends=n
+
+echo ""
+echo "--- Trend Dashboard ---"
+ask "  Enable weekly quality trend report?" "n" enable_trends
+
 # --- Create output directory --------------------------------------------------
 
 mkdir -p "$OUTPUT_DIR"
@@ -374,6 +381,32 @@ if [[ "${enable_fuzz:-n}" == "y" ]]; then
     fi
 fi
 
+# --- Generate trend dashboard workflow ----------------------------------------
+
+if [[ "$enable_trends" == "y" ]]; then
+    TRENDS_FILE="$OUTPUT_DIR/trends.yml"
+
+    {
+        cat << 'HEADER'
+name: Trend Dashboard
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Weekly Monday 9am UTC
+  workflow_dispatch:
+
+jobs:
+  trends:
+HEADER
+        echo "    uses: ${STANDARD_REPO}/.github/workflows/trend-dashboard.yml@main"
+        echo "    permissions:"
+        echo "      actions: read"
+        echo "      contents: read"
+    } > "$TRENDS_FILE"
+
+    echo "Generated: $TRENDS_FILE"
+fi
+
 # --- Summary ------------------------------------------------------------------
 
 echo ""
@@ -385,6 +418,7 @@ echo "Generated files in $OUTPUT_DIR/:"
 [[ "$enable_sast" == "y" ]]       && echo "  - sast-python.yml"
 [[ "$enable_infra" == "y" ]]      && echo "  - infra-lint.yml"
 [[ "${enable_fuzz:-n}" == "y" ]]  && echo "  - fuzz.yml (edit matrix.target)"
+[[ "$enable_trends" == "y" ]]    && echo "  - trends.yml"
 echo ""
 echo "Next steps:"
 echo "  1. Review the generated files"

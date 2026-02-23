@@ -32,6 +32,7 @@ Every PR gets an auto-updating emoji scoreboard comment from each workflow:
 | **Supply Chain** | Container SBOM, source SBOM, Grype vulnerabilities, license compliance | `sbom.yml` |
 | **Versioning** | SemVer in package.xml, CMakeLists.txt, pyproject.toml | `version-check.yml` |
 | **Release** | Auto-tag + GitHub Release on push to main | `auto-release.yml` |
+| **Trends** | Weekly quality trend report (pass rates, most-failing checks) | `trend-dashboard.yml` |
 
 ## Quick Start
 
@@ -93,6 +94,7 @@ jobs:
 | [`sbom.yml`](.github/workflows/sbom.yml) | Multi | Syft container SBOM, source dependency scan, Grype vulnerability scanning, license check |
 | [`version-check.yml`](.github/workflows/version-check.yml) | Multi | SemVer validation in package.xml, CMakeLists.txt, pyproject.toml |
 | [`auto-release.yml`](.github/workflows/auto-release.yml) | Multi | Reusable auto-release: conventional-commit version bumps, git tags, GitHub Releases, SLSA provenance |
+| [`trend-dashboard.yml`](.github/workflows/trend-dashboard.yml) | Multi | Weekly quality trend report: pass rates per check, trend arrows, Slack/Discussions posting |
 | [`release.yml`](.github/workflows/release.yml) | — | Triggers auto-release on push to main (standard repo) |
 
 ## Workflow Inputs
@@ -307,6 +309,18 @@ jobs:
 
 </details>
 
+<details>
+<summary><strong>Trend Dashboard Inputs</strong> (4 inputs)</summary>
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `lookback_days` | `28` | Number of days of history to analyze |
+| `slack_webhook_url` | `''` | Slack webhook URL for posting trend report (empty = skip) |
+| `post_to_discussions` | `false` | Post trend report as a GitHub Discussion (opt-in) |
+| `runner` | `ubuntu-latest` | Runner labels as JSON |
+
+</details>
+
 ## Full-Featured C++ Example
 
 ```yaml
@@ -446,6 +460,7 @@ Generate project scaffolding from the standard:
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
   auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release → SLSA provenance)
+  trend-dashboard.yml       Reusable trend dashboard (weekly quality trend report, Slack/Discussions posting)
   release.yml               Triggers auto-release on push to main
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo

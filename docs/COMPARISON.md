@@ -120,7 +120,7 @@ Note: cmake_template's former unique advantages (hardening, fuzzing, CMakePreset
 | Copy-paste detection (jscpd) | MegaLinter | Low | Code smell, not bugs. High noise |
 | BinSkim (richer binary checks) | Microsoft | Low | standard's readelf-based hardening job covers the essentials; BinSkim adds stack-clash-protection + SafeStack |
 | Renovate support in generate-workflow.sh | Renovate | Low | Better C++ dep update support than Dependabot (Conan) |
-| Trend dashboard | Internal | Planned | Weekly aggregate scan results |
+| ~~Trend dashboard~~ | Internal | **Done** | `trend-dashboard.yml` — weekly aggregate scan results, Slack/Discussions posting |
 
 ### Already Done (previously listed as TODO):
 - ~~Hardening flags~~ → CMakePresets-sanitizers.json + hardening verification job

@@ -17,6 +17,7 @@ This repo provides reusable GitHub Actions workflows for diff-aware C++ and Pyth
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
   auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release → SLSA provenance)
+  trend-dashboard.yml       Reusable trend dashboard (weekly quality trend report, Slack/Discussions posting)
   release.yml               Triggers auto-release on push to main
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo (multi-version Python)

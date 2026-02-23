@@ -10,7 +10,7 @@ This document describes the full quality and security process enforced by this t
  pre-commit hooks              diff-aware linting          CodeQL scheduled
    clang-format                  clang-tidy (Docker)       Infer scheduled
    clang-tidy                    cppcheck (Docker)         Fuzz corpus runs
-   cppcheck                      clang-format
+   cppcheck                      clang-format              Trend dashboard (weekly)
                                  flawfinder (CWE)
  local scripts                   ruff / flake8
    diff-clang-tidy.sh           diff-cover
@@ -372,4 +372,5 @@ Standalone script: `scripts/check-hardening.sh <binary_path>...`
 | PR (SAST) | Pull request | Semgrep, pip-audit, CodeQL (optional) |
 | PR (SBOM) | Pull request | Syft, Grype, source SBOM, license check |
 | Post-merge | Schedule/push | CodeQL, Infer, fuzz corpus runs |
+| Trend report | Weekly schedule | Quality trend dashboard: pass rates per check, trend arrows, Slack/Discussions |
 | Local dev | Manual | Scripts, sanitizer presets, CMake warnings |
