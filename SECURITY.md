@@ -37,7 +37,7 @@ This policy covers:
 
 If you use these workflows in your project:
 
-1. **Pin to a release tag** (e.g., `@v1.2.3`) rather than `@main` for production
+1. **Pin to a release tag or commit SHA** (e.g., `@v1.2.3`) rather than `@main` for production
 2. **Review workflow permissions** — only grant what each workflow needs
 3. **Use `enable_dangerous_workflows: true`** in `infra-lint.yml` to detect injection patterns in your CI
 4. **Enable Dependabot** to keep action versions current
