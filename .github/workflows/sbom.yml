@@ -133,7 +133,7 @@ jobs:
 
       - name: Run Grype vulnerability scan
         id: grype
-        uses: anchore/scan-action@v6
+        uses: anchore/scan-action@v7
         with:
           sbom: container-sbom-cdx.json
           fail-build: ${{ inputs.grype_fail_on != '' }}
