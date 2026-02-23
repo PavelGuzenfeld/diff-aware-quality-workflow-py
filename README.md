@@ -2,6 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/PavelGuzenfeld/standard?label=version&color=blue)](https://github.com/PavelGuzenfeld/standard/releases)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PavelGuzenfeld/standard/badge)](https://scorecard.dev/viewer/?uri=github.com/PavelGuzenfeld/standard)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12012/badge)](https://www.bestpractices.dev/projects/12012)
 
 Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SAST, sanitizers, fuzzing — only check what changed.
 
