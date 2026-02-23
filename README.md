@@ -80,6 +80,7 @@ jobs:
 | **[Integration Guide](docs/INTEGRATION.md)** | Step-by-step setup for C++ and Python projects |
 | **[Versioning Rules](docs/VERSIONING.md)** | SemVer policy: initial versions, bump rules, git tags |
 | **[Roadmap](docs/ROADMAP.md)** | Conventions, coding standards, and planned features |
+| **[Industry Comparison](docs/COMPARISON.md)** | Feature-by-feature comparison with Google, Microsoft, JFrog, MegaLinter, and others |
 
 ## Reusable Workflows
 
@@ -473,6 +474,7 @@ docs/
   INTEGRATION.md            Step-by-step integration guide
   VERSIONING.md             SemVer policy and bump rules
   ROADMAP.md                Conventions, coding standards, and planned features
+  COMPARISON.md             Industry comparison (Google, Microsoft, JFrog, MegaLinter, etc.)
 AGENTS.md                   AI agent instructions for contributing to this repo
 src/calculator.py           Python demo module
 ```

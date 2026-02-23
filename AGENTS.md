@@ -45,6 +45,7 @@ docs/
   INTEGRATION.md            Step-by-step integration guide
   VERSIONING.md             SemVer policy and bump rules
   ROADMAP.md                Conventions, coding standards, and planned features
+  COMPARISON.md             Industry comparison (Google, Microsoft, JFrog, MegaLinter, etc.)
 src/calculator.py           Python demo module
 ```
 
