@@ -4,14 +4,13 @@ on:
   push:
     branches: [main]
 
-permissions: read-all
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     uses: ./.github/workflows/auto-release.yml
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
     with:
       enable_provenance: true

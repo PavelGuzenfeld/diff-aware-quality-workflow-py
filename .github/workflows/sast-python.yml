@@ -40,16 +40,17 @@ on:
         default: '"ubuntu-latest"'
         description: 'Runner labels as JSON (e.g., "\"ubuntu-latest\"" or "[\"self-hosted\",\"X64\",\"Linux\"]")'
 
-permissions: read-all
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+  security-events: write
 
 jobs:
   semgrep:
     name: Semgrep
     if: inputs.enable_semgrep
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      contents: read
-      security-events: write
     container:
       image: semgrep/semgrep:${{ inputs.semgrep_version }}
     steps:
@@ -99,9 +100,6 @@ jobs:
     name: CodeQL
     if: inputs.enable_codeql
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      contents: read
-      security-events: write
     steps:
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -120,8 +118,6 @@ jobs:
   summary:
     name: SAST Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      pull-requests: write
     needs: [semgrep, pip-audit, codeql]
     if: always() && github.event_name == 'pull_request'
     steps:

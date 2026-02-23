@@ -244,7 +244,12 @@ on:
         default: ''
         description: 'DEPRECATED: moved to infra-lint.yml. Kept for backward compatibility — ignored.'
 
-permissions: read-all
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: write
+  security-events: write
 
 jobs:
   verify-toolchain:
@@ -1177,9 +1182,6 @@ jobs:
   flawfinder:
     name: flawfinder
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      contents: read
-      security-events: write
     if: inputs.enable_flawfinder && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'flawfinder'))
     steps:
       - name: Check out repository
@@ -2033,8 +2035,6 @@ jobs:
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      pull-requests: write
     needs: [verify-toolchain, clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage, hardening]
     if: always() && github.event_name == 'pull_request'
     steps:

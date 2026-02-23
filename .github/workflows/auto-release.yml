@@ -12,16 +12,15 @@ on:
         default: false
         description: 'Enable SLSA provenance attestation for releases (opt-in)'
 
-permissions: read-all
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     name: Tag & Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

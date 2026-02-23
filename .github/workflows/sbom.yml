@@ -36,15 +36,17 @@ on:
         default: ''
         description: 'Path to license check Python script in caller repo'
 
-permissions: read-all
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: write
+  security-events: write
 
 jobs:
   container-sbom:
     name: Container SBOM
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      contents: read
-      packages: read
     steps:
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -483,8 +485,6 @@ jobs:
   summary:
     name: SBOM Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    permissions:
-      pull-requests: write
     needs: [container-sbom, source-sbom, vuln-scan, license-check]
     if: always() && github.event_name == 'pull_request'
     steps:
