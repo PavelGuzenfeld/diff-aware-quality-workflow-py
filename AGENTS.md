@@ -10,7 +10,7 @@ This repo provides reusable GitHub Actions workflows for diff-aware C++ and Pyth
 
 ```
 .github/workflows/
-  cpp-quality.yml           Reusable C++ quality workflow (52 inputs, 13+ opt-in checks)
+  cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 14+ opt-in checks)
   infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
@@ -34,10 +34,11 @@ scripts/
   install-hooks.sh           Install git pre-commit hooks
   check-repo-structure.sh    Validate repo directory structure
   check-dangerous-workflows.sh Audit workflow files for injection patterns
+  check-hardening.sh         Verify ELF binary hardening properties
   filter-excludes.sh         Filter file lists against exclusion patterns
 configs/                    Drop-in configs, CI templates, and agent instructions (17 files)
 tests/
-  test_patterns.sh          Pattern validation tests (154 tests, bash)
+  test_patterns.sh          Pattern validation tests (176 tests, bash)
   test_calculator.py        Python demo tests (pytest)
 docs/
   SDLC.md                   Full software development lifecycle document
@@ -59,7 +60,7 @@ pytest tests/test_calculator.py
 # Self-test workflow runs python-quality.yml on the demo code (CI only)
 ```
 
-`test_patterns.sh` is the primary test suite. It validates grep/regex patterns used by the workflow jobs and scripts. All 154 tests must pass.
+`test_patterns.sh` is the primary test suite. It validates grep/regex patterns used by the workflow jobs and scripts. All 176 tests must pass.
 
 ## Adding a New Check
 

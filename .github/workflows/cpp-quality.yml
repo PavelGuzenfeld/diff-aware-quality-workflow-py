@@ -187,10 +187,26 @@ on:
         type: boolean
         default: false
         description: 'Generate diff-cover markdown report as artifact'
+      enable_hardening:
+        type: boolean
+        default: false
+        description: 'Enable binary hardening verification (PIE, RELRO, stack canary, NX)'
+      hardening_script:
+        type: string
+        default: ''
+        description: 'Script to build with hardening flags (in repo). If empty, uses cmake --preset release-hardened.'
+      hardening_binary_paths:
+        type: string
+        default: 'build-hardened/bin/*'
+        description: 'Space-separated globs to ELF binaries to check (inside container)'
+      hardening_skip_checks:
+        type: string
+        default: ''
+        description: 'Space-separated checks to skip: pie relro bindnow canary fortify nx'
       select_jobs:
         type: string
         default: 'all'
-        description: 'Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder)'
+        description: 'Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder, hardening)'
       base_ref:
         type: string
         default: ''
@@ -265,6 +281,7 @@ jobs:
             -e ENABLE_SANITIZERS="${{ inputs.enable_sanitizers }}" \
             -e ENABLE_TSAN="${{ inputs.enable_tsan }}" \
             -e ENABLE_COVERAGE="${{ inputs.enable_coverage }}" \
+            -e ENABLE_HARDENING="${{ inputs.enable_hardening }}" \
             -e PRE_SCRIPT="${{ inputs.pre_analysis_script }}" \
             -e CDB_PATH="${{ inputs.compile_commands_path }}/compile_commands.json" \
             "${{ inputs.docker_image }}" \
@@ -288,12 +305,15 @@ jobs:
               [ "$ENABLE_FORMAT" = "true" ] && check_tool "clang-format" "clang-format" "--version"
               [ "$ENABLE_IWYU" = "true" ] && check_tool "IWYU" "include-what-you-use" "--version"
 
-              # cmake needed for builds (sanitizers, tsan, coverage) and compile_commands
+              # cmake needed for builds (sanitizers, tsan, coverage, hardening) and compile_commands
               if [ "$ENABLE_TIDY" = "true" ] || [ "$ENABLE_SANITIZERS" = "true" ] || \
                  [ "$ENABLE_TSAN" = "true" ] || [ "$ENABLE_COVERAGE" = "true" ] || \
-                 [ "$ENABLE_IWYU" = "true" ]; then
+                 [ "$ENABLE_IWYU" = "true" ] || [ "$ENABLE_HARDENING" = "true" ]; then
                 check_tool "cmake" "cmake" "--version"
               fi
+
+              # readelf needed for hardening verification
+              [ "$ENABLE_HARDENING" = "true" ] && check_tool "readelf" "readelf" "--version"
 
               # compile_commands.json needed for clang-tidy and iwyu
               if [ "$ENABLE_TIDY" = "true" ] || [ "$ENABLE_IWYU" = "true" ]; then
@@ -1775,10 +1795,223 @@ jobs:
             coverage_html/
             diff-cover.md
 
+  hardening:
+    name: Hardening Verification
+    needs: [verify-toolchain]
+    if: inputs.enable_hardening && (inputs.select_jobs == 'all' || contains(inputs.select_jobs, 'hardening'))
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Login to GitHub Container Registry
+        if: inputs.docker_image != ''
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Prepare cache paths
+        if: inputs.build_cache_key != ''
+        id: cache-paths
+        run: |
+          {
+            echo "paths<<EOF"
+            echo "${{ inputs.build_cache_paths }}" | tr ' ' '\n'
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Restore build cache
+        if: inputs.build_cache_key != ''
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.cache-paths.outputs.paths }}
+          key: ${{ inputs.build_cache_key }}-hardening
+          restore-keys: |
+            ${{ inputs.build_cache_key }}-hardening-
+            ${{ inputs.build_cache_key }}-
+
+      - name: Run hardening script
+        if: inputs.hardening_script != ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}bash ${{ inputs.hardening_script }}"
+
+      - name: Build with hardening (default flow)
+        if: inputs.hardening_script == ''
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "
+              ${SETUP_CMD}
+              cmake --preset release-hardened && cmake --build --preset release-hardened
+            "
+
+      - name: Verify hardening properties
+        run: |
+          SETUP_CMD=""
+          if [ -n "${{ inputs.source_setup }}" ]; then
+            SETUP_CMD="${{ inputs.source_setup }} && "
+          fi
+
+          SKIP_ARGS=""
+          if [ -n "${{ inputs.hardening_skip_checks }}" ]; then
+            for check in ${{ inputs.hardening_skip_checks }}; do
+              SKIP_ARGS="$SKIP_ARGS --skip $check"
+            done
+          fi
+
+          BINARY_PATHS="${{ inputs.hardening_binary_paths }}"
+
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            "${{ inputs.docker_image }}" \
+            bash -c "${SETUP_CMD}"'
+              FAILURES=0
+              WARNINGS=0
+              BINARIES=()
+
+              for pattern in '"$BINARY_PATHS"'; do
+                for file in $pattern; do
+                  [ -f "$file" ] || continue
+                  if file "$file" 2>/dev/null | grep -q "ELF"; then
+                    BINARIES+=("$file")
+                  fi
+                done
+              done
+
+              if [ ${#BINARIES[@]} -eq 0 ]; then
+                echo "::error::No ELF binaries found matching: '"$BINARY_PATHS"'"
+                exit 1
+              fi
+
+              echo "Checking ${#BINARIES[@]} ELF binary(ies)..."
+              echo ""
+
+              is_skipped() {
+                local check="$1"
+                for s in '"$SKIP_ARGS"'; do
+                  [ "$s" = "--skip" ] && continue
+                  [ "$s" = "$check" ] && return 0
+                done
+                return 1
+              }
+
+              for binary in "${BINARIES[@]}"; do
+                echo "--- $binary ---"
+                BIN_FAIL=0
+
+                IS_SHARED=false
+                if file "$binary" 2>/dev/null | grep -q "shared object"; then
+                  IS_SHARED=true
+                fi
+
+                # PIE check
+                if ! is_skipped "pie"; then
+                  if $IS_SHARED; then
+                    echo "  PIE: SKIP (shared library)"
+                  else
+                    ELF_TYPE=$(readelf -h "$binary" 2>/dev/null | grep -oP "Type:\s+\K\S+" || echo "UNKNOWN")
+                    if [ "$ELF_TYPE" = "DYN" ]; then
+                      echo "  PIE: PASS"
+                    else
+                      echo "  PIE: FAIL (type: $ELF_TYPE)"
+                      echo "::error file=$binary::PIE not enabled — ELF type is $ELF_TYPE, expected DYN"
+                      BIN_FAIL=1
+                    fi
+                  fi
+                fi
+
+                # RELRO check
+                if ! is_skipped "relro"; then
+                  if readelf -l "$binary" 2>/dev/null | grep -q "GNU_RELRO"; then
+                    echo "  RELRO: PASS"
+                  else
+                    echo "  RELRO: FAIL"
+                    echo "::error file=$binary::No GNU_RELRO segment — RELRO not enabled"
+                    BIN_FAIL=1
+                  fi
+                fi
+
+                # BIND_NOW check
+                if ! is_skipped "bindnow"; then
+                  if readelf -d "$binary" 2>/dev/null | grep -qE "\(BIND_NOW\)"; then
+                    echo "  BIND_NOW: PASS"
+                  else
+                    echo "  BIND_NOW: FAIL"
+                    echo "::error file=$binary::No BIND_NOW flag — only Partial RELRO"
+                    BIN_FAIL=1
+                  fi
+                fi
+
+                # Stack canary check
+                if ! is_skipped "canary"; then
+                  if readelf -s "$binary" 2>/dev/null | grep -q "__stack_chk_fail"; then
+                    echo "  CANARY: PASS"
+                  else
+                    echo "  CANARY: FAIL"
+                    echo "::error file=$binary::No __stack_chk_fail symbol — stack protector missing"
+                    BIN_FAIL=1
+                  fi
+                fi
+
+                # FORTIFY check (warning only)
+                if ! is_skipped "fortify"; then
+                  if readelf -s "$binary" 2>/dev/null | grep -qE "__\w+_chk"; then
+                    echo "  FORTIFY: PASS"
+                  else
+                    echo "  FORTIFY: WARN (no fortified functions)"
+                    echo "::warning file=$binary::No __*_chk symbols — binary may not use fortifiable functions"
+                    WARNINGS=$((WARNINGS + 1))
+                  fi
+                fi
+
+                # NX check
+                if ! is_skipped "nx"; then
+                  STACK_LINE=$(readelf -l "$binary" 2>/dev/null | grep "GNU_STACK" || true)
+                  if [ -z "$STACK_LINE" ]; then
+                    echo "  NX: FAIL (no GNU_STACK)"
+                    echo "::error file=$binary::No GNU_STACK segment"
+                    BIN_FAIL=1
+                  elif echo "$STACK_LINE" | grep -qE "RWE"; then
+                    echo "  NX: FAIL (executable stack)"
+                    echo "::error file=$binary::GNU_STACK has execute flag — stack is executable"
+                    BIN_FAIL=1
+                  else
+                    echo "  NX: PASS"
+                  fi
+                fi
+
+                [ $BIN_FAIL -gt 0 ] && FAILURES=$((FAILURES + 1))
+                echo ""
+              done
+
+              echo "========================================"
+              echo "  Binaries: ${#BINARIES[@]}, Failures: $FAILURES, Warnings: $WARNINGS"
+              echo "========================================"
+
+              [ $FAILURES -gt 0 ] && exit 1
+              exit 0
+            '
+
   summary:
     name: Post Summary
     runs-on: ${{ fromJSON(inputs.runner) }}
-    needs: [verify-toolchain, clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage]
+    needs: [verify-toolchain, clang-tidy, cppcheck, clang-format, doctest-enforce, file-naming, cout-ban, new-delete-ban, flawfinder, sanitizer-tests, tsan-tests, iwyu, coverage, hardening]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Post or update PR comment
@@ -1798,6 +2031,7 @@ jobs:
             const tsan = '${{ needs.tsan-tests.result }}';
             const iwyu = '${{ needs.iwyu.result }}';
             const coverage = '${{ needs.coverage.result }}';
+            const hardening = '${{ needs.hardening.result }}';
 
             const icon = (r) => {
               if (r === 'success') return '✅';
@@ -1839,6 +2073,9 @@ jobs:
             }
             if (coverage && coverage !== 'skipped') {
               body += `| Coverage | ${icon(coverage)} ${coverage === 'success' ? 'thresholds met' : 'below threshold'} |\n`;
+            }
+            if (hardening && hardening !== 'skipped') {
+              body += `| Hardening | ${icon(hardening)} ${hardening === 'success' ? 'all checks pass' : 'hardening issues'} |\n`;
             }
             body += '\n---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> · Only changed files checked</sub>';
 

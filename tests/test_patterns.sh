@@ -13,6 +13,7 @@
 #   7. End-to-end: package naming (include/<pkg>/)
 #   8. Dangerous-workflow patterns (injection regex)
 #   9. Binary-artifact patterns (extension matching)
+#  10. Hardening verification patterns (readelf output parsing)
 #
 # Exit code: 0 = all pass, 1 = failures found
 
@@ -613,6 +614,59 @@ assert_no_match "$BINARY_PATTERN" 'config.yaml'             "yaml not matched"
 assert_no_match "$BINARY_PATTERN" 'Makefile'                "Makefile not matched"
 assert_no_match "$BINARY_PATTERN" 'src/binary_utils.cpp'    "binary_utils.cpp not matched (substring)"
 assert_no_match "$BINARY_PATTERN" 'docs/classes.md'         "classes.md not matched (substring)"
+
+echo ""
+
+# =============================================================================
+echo "=== 10. Hardening verification patterns ==="
+# =============================================================================
+
+# --- PIE detection (readelf -h output) ---
+PIE_DYN_PATTERN='Type:\s+DYN'
+PIE_EXEC_PATTERN='Type:\s+EXEC'
+
+assert_matches "$PIE_DYN_PATTERN"  '  Type:                              DYN (Position-Independent Executable)'  "PIE binary detected (DYN)"
+assert_matches "$PIE_DYN_PATTERN"  '  Type:                              DYN (Shared object file)'               "shared lib detected (DYN)"
+assert_matches "$PIE_EXEC_PATTERN" '  Type:                              EXEC (Executable file)'                 "non-PIE binary detected (EXEC)"
+assert_no_match "$PIE_DYN_PATTERN" '  Type:                              EXEC (Executable file)'                 "EXEC not matched as DYN"
+
+# --- RELRO detection (readelf -l output) ---
+RELRO_PATTERN='GNU_RELRO'
+
+assert_matches "$RELRO_PATTERN"    '  GNU_RELRO      0x0000000000003e10 0x0000000000403e10'  "GNU_RELRO segment detected"
+assert_no_match "$RELRO_PATTERN"   '  GNU_STACK      0x0000000000000000 0x0000000000000000'  "GNU_STACK not matched as RELRO"
+assert_no_match "$RELRO_PATTERN"   '  LOAD           0x0000000000000000 0x0000000000400000'  "LOAD not matched as RELRO"
+
+# --- BIND_NOW detection (readelf -d output) ---
+BINDNOW_PATTERN='\(BIND_NOW\)'
+
+assert_matches "$BINDNOW_PATTERN"    ' 0x0000000000000018 (BIND_NOW)           '                   "standalone BIND_NOW detected"
+assert_no_match "$BINDNOW_PATTERN"   ' 0x000000000000001e (FLAGS)              BIND_NOW'           "FLAGS value not matched (no parens)"
+assert_no_match "$BINDNOW_PATTERN"   ' 0x000000000000001e (FLAGS)              ORIGIN'             "ORIGIN not matched as BIND_NOW"
+assert_no_match "$BINDNOW_PATTERN"   ' 0x0000000000000001 (NEEDED)             Shared library'     "NEEDED not matched as BIND_NOW"
+
+# --- Stack canary detection (readelf -s output) ---
+CANARY_PATTERN='__stack_chk_fail'
+
+assert_matches "$CANARY_PATTERN"    '    42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __stack_chk_fail@GLIBC_2.4'  "stack canary symbol detected"
+assert_no_match "$CANARY_PATTERN"   '    42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND printf@GLIBC_2.2.5'         "printf not matched as canary"
+
+# --- FORTIFY detection (readelf -s output) ---
+FORTIFY_PATTERN='__\w+_chk'
+
+assert_matches "$FORTIFY_PATTERN"    '    55: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __printf_chk@GLIBC_2.3.4'     "FORTIFY __printf_chk detected"
+assert_matches "$FORTIFY_PATTERN"    '    56: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __memcpy_chk@GLIBC_2.3.4'     "FORTIFY __memcpy_chk detected"
+assert_matches "$FORTIFY_PATTERN"    '    57: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __sprintf_chk@GLIBC_2.3.4'    "FORTIFY __sprintf_chk detected"
+assert_no_match "$FORTIFY_PATTERN"   '    42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND printf@GLIBC_2.2.5'           "plain printf not matched as FORTIFY"
+assert_no_match "$FORTIFY_PATTERN"   '    42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND malloc@GLIBC_2.2.5'           "malloc not matched as FORTIFY"
+assert_matches  "$FORTIFY_PATTERN"   '    42: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __stack_chk_fail@GLIBC_2.4'   "stack_chk_fail matches FORTIFY pattern (known overlap)"
+
+# --- NX detection (readelf -l output) ---
+NX_EXECUTABLE_PATTERN='GNU_STACK.*RWE'
+
+assert_matches "$NX_EXECUTABLE_PATTERN"    '  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000 RWE 0x10'  "executable stack detected (RWE)"
+assert_no_match "$NX_EXECUTABLE_PATTERN"   '  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000 0x0000 RW  0x10'  "non-executable stack OK (RW)"
+assert_no_match "$NX_EXECUTABLE_PATTERN"   '  GNU_RELRO      0x0000000000003e10 0x0000000000403e10 0x0000 RW  0x1'                      "GNU_RELRO not matched as GNU_STACK"
 
 echo ""
 

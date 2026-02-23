@@ -22,6 +22,7 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | TSan | Thread sanitizer | Opt-in |
 | gcov/lcov | Code coverage + diff-cover | Opt-in |
 | libFuzzer | Continuous fuzzing with ASan + corpus caching | Template (`ci-fuzz.yml`) |
+| Hardening | PIE, RELRO, stack canary, NX verification via readelf | Opt-in |
 
 **Script & Container Linting:**
 
@@ -302,4 +303,5 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | Workflow YAML generator (generate-workflow.sh) | Done | - |
 | README badge generator (generate-badges.sh) | Done | - |
 | AGENTS.md generator (generate-agents-md.sh) | Done | - |
+| Binary hardening verification | Done | cpp-quality.yml |
 | Trend dashboard | Planned | - |

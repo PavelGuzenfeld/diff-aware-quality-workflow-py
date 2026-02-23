@@ -22,6 +22,7 @@ Only changed files are checked — but all new and modified code must pass.
 - **Banned: cout/printf** — use structured logging instead
 - **Banned: raw new/delete** — use smart pointers (`std::make_unique`, `std::make_shared`)
 - **Banned: gtest/gbenchmark** — use doctest and nanobench
+- **Hardening verification** — PIE, RELRO, stack canary, NX checks on release binaries
 - **Identifier naming** — snake_case functions/variables, PascalCase types, trailing `_` for private members
 
 ### Python (if applicable)
@@ -98,9 +99,10 @@ Every non-trivial module should cover these edge cases:
 ### Sanitizer Build Presets
 
 ```bash
-cmake --preset debug-asan    # ASan + UBSan
-cmake --preset debug-tsan    # ThreadSanitizer
-cmake --preset release-asan  # ASan + UBSan at -O2
+cmake --preset debug-asan       # ASan + UBSan
+cmake --preset debug-tsan       # ThreadSanitizer
+cmake --preset release-asan     # ASan + UBSan at -O2
+cmake --preset release-hardened # Production hardening (FORTIFY, PIE, RELRO)
 ```
 
 ## Code Formatting

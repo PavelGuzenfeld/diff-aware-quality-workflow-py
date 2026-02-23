@@ -25,7 +25,7 @@ Every PR gets an auto-updating emoji scoreboard comment from each workflow:
 
 | Category | Checks | Workflow |
 |----------|--------|----------|
-| **C++ Quality** | clang-tidy, cppcheck, clang-format, flawfinder, ASan/UBSan, TSan, coverage, IWYU, file naming, banned patterns | `cpp-quality.yml` |
+| **C++ Quality** | clang-tidy, cppcheck, clang-format, flawfinder, ASan/UBSan, TSan, coverage, IWYU, hardening, file naming, banned patterns | `cpp-quality.yml` |
 | **Python Quality** | ruff/flake8 lint, pytest, diff-cover | `python-quality.yml` |
 | **Python SAST** | Semgrep, pip-audit, CodeQL | `sast-python.yml` |
 | **Infrastructure** | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan | `infra-lint.yml` |
@@ -85,7 +85,7 @@ jobs:
 
 | Workflow | Language | What it checks |
 |----------|----------|---------------|
-| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, sanitizers, TSAN, coverage, IWYU, file naming, banned patterns |
+| [`cpp-quality.yml`](.github/workflows/cpp-quality.yml) | C++ | clang-tidy, cppcheck, clang-format, flawfinder, sanitizers, TSAN, coverage, IWYU, hardening, file naming, banned patterns |
 | [`infra-lint.yml`](.github/workflows/infra-lint.yml) | Multi | ShellCheck (shell scripts), Hadolint (Dockerfiles), cmake-lint (CMake files), dangerous-workflow audit, binary-artifact scan |
 | [`python-quality.yml`](.github/workflows/python-quality.yml) | Python | ruff/flake8 (diff-aware), pytest, diff-cover |
 | [`sast-python.yml`](.github/workflows/sast-python.yml) | Python | Semgrep, pip-audit, CodeQL |
@@ -97,7 +97,7 @@ jobs:
 ## Workflow Inputs
 
 <details>
-<summary><strong>C++ Inputs</strong> (52 inputs)</summary>
+<summary><strong>C++ Inputs</strong> (56 inputs)</summary>
 
 **Core:**
 
@@ -114,7 +114,7 @@ jobs:
 | `build_cache_key` | `''` | Cache key for build artifacts (empty = no caching) |
 | `build_cache_paths` | `build install` | Space-separated paths to cache |
 | `checkout_submodules` | `false` | Pass to actions/checkout submodules (false, true, recursive) |
-| `select_jobs` | `all` | Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder) |
+| `select_jobs` | `all` | Comma-separated jobs to run (all, clang-tidy, cppcheck, coverage, tsan, sanitizers, iwyu, clang-format, doctest, file-naming, cout-ban, new-delete-ban, flawfinder, hardening) |
 | `base_ref` | `''` | Base branch for diff (fallback when github.base_ref is empty) |
 
 **clang-tidy:**
@@ -180,6 +180,15 @@ jobs:
 | `coverage_threshold` | `0` | Minimum overall line coverage % (0 = no threshold) |
 | `coverage_diff_threshold` | `0` | Minimum coverage % for changed lines via diff-cover (0 = disabled) |
 | `coverage_diff_report` | `false` | Generate diff-cover markdown report as artifact |
+
+**Hardening:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `enable_hardening` | `false` | Enable binary hardening verification (opt-in) |
+| `hardening_script` | `''` | Script to build with hardening flags |
+| `hardening_binary_paths` | `build-hardened/bin/*` | Space-separated globs to ELF binaries to check |
+| `hardening_skip_checks` | `''` | Space-separated checks to skip: pie relro bindnow canary fortify nx |
 
 **IWYU:**
 
@@ -318,6 +327,7 @@ jobs:
       tsan_script: .github/scripts/tsan-tests.sh
       enable_coverage: true
       coverage_script: .github/scripts/coverage-tests.sh
+      enable_hardening: true
       enable_iwyu: true
       iwyu_script: .github/scripts/iwyu-analysis.sh
       enforce_doctest: true
@@ -414,17 +424,19 @@ Generate project scaffolding from the standard:
 |--------|---------|
 | `check-repo-structure.sh` | Validate repo directory structure against a template |
 | `check-dangerous-workflows.sh` | Audit workflow files for injection patterns |
+| `check-hardening.sh` | Verify ELF binary hardening (PIE, RELRO, NX, canary) |
 | `filter-excludes.sh` | Filter file lists against exclusion patterns |
 
 ```bash
 ./scripts/check-repo-structure.sh configs/repo-structure-ros2.txt .
+./scripts/check-hardening.sh build-hardened/bin/*
 ```
 
 ## Project Structure
 
 ```
 .github/workflows/
-  cpp-quality.yml           Reusable C++ quality workflow (52 inputs, 13+ opt-in checks)
+  cpp-quality.yml           Reusable C++ quality workflow (56 inputs, 14+ opt-in checks)
   infra-lint.yml            Reusable infrastructure lint workflow (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan)
   python-quality.yml        Reusable Python quality workflow (ruff/flake8, pytest, diff-cover)
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
@@ -448,10 +460,11 @@ scripts/
   install-hooks.sh           Install git pre-commit hooks
   check-repo-structure.sh    Validate repo directory structure
   check-dangerous-workflows.sh Audit workflow files for injection patterns
+  check-hardening.sh         Verify ELF binary hardening properties
   filter-excludes.sh         Filter file lists against exclusion patterns
 configs/                    Drop-in configs, CI templates, and agent instructions (17 files)
 tests/
-  test_patterns.sh          Pattern validation tests (154 tests)
+  test_patterns.sh          Pattern validation tests (176 tests)
   test_calculator.py        Python demo tests
 docs/
   SDLC.md                   Full software development lifecycle document

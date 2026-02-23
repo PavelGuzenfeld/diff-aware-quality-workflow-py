@@ -150,6 +150,9 @@ jobs:
       # Step 9: Upload SARIF to GitHub Security tab
       enable_sarif: true
 
+      # Step 10: Enable hardening verification (PIE, RELRO, NX, canary)
+      enable_hardening: true
+
     permissions:
       contents: read
       pull-requests: write
@@ -560,6 +563,25 @@ with:
   fail_under: 80  # allow up to 20% violation rate on changed lines
 ```
 
+### Hardening: "No ELF binaries found"
+
+The hardening job looks for ELF binaries at `hardening_binary_paths` (default: `build-hardened/bin/*`). If your build outputs binaries to a different location, override the path:
+
+```yaml
+with:
+  enable_hardening: true
+  hardening_binary_paths: 'build-hardened/bin/* build-hardened/lib/*.so'
+```
+
+If using a custom build script, ensure it produces ELF binaries at the expected paths:
+
+```yaml
+with:
+  enable_hardening: true
+  hardening_script: .github/scripts/hardened-build.sh
+  hardening_binary_paths: 'build/bin/*'
+```
+
 ### flake8 instead of ruff
 
 For ROS2/ament compatibility:
@@ -701,6 +723,6 @@ This creates a SLSA provenance attestation for each release using `actions/attes
 
 For the complete list of all inputs with defaults and descriptions, see the main [README](../README.md).
 
-- [C++ inputs](../README.md#c-inputs) (52 inputs)
+- [C++ inputs](../README.md#c-inputs) (56 inputs)
 - [Python inputs](../README.md#python-inputs) (8 inputs)
 - [Python SAST inputs](../README.md#python-sast-inputs) (8 inputs)

@@ -110,6 +110,7 @@ enable_tsan=n
 enable_coverage=n
 enable_iwyu=n
 enable_fuzz=n
+enable_hardening=n
 
 if [[ "$enable_cpp" == "y" ]]; then
     echo ""
@@ -129,6 +130,7 @@ if [[ "$enable_cpp" == "y" ]]; then
     ask "  TSAN (ThreadSanitizer) tests?" "n" enable_tsan
     ask "  Code coverage reporting?" "n" enable_coverage
     ask "  Include-What-You-Use (IWYU)?" "n" enable_iwyu
+    ask "  Binary hardening verification (PIE, RELRO, NX)?" "n" enable_hardening
     ask "  libFuzzer continuous fuzzing?" "n" enable_fuzz
 fi
 
@@ -223,6 +225,7 @@ HEADER
         [[ "$enable_tsan" == "y" ]]         && echo "      enable_tsan: true"
         [[ "$enable_coverage" == "y" ]]     && echo "      enable_coverage: true"
         [[ "$enable_iwyu" == "y" ]]         && echo "      enable_iwyu: true"
+        [[ "$enable_hardening" == "y" ]]   && echo "      enable_hardening: true"
 
         # Suppress file if it exists
         [ -f "cppcheck.suppress" ] && echo "      cppcheck_suppress: cppcheck.suppress"

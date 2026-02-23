@@ -163,6 +163,7 @@ Only files changed in the PR are checked. Detection uses `git diff --name-only -
 | Thread safety | TSan | `cpp-quality.yml` (Docker) | Opt-in |
 | Code coverage | gcov/lcov + diff-cover | `cpp-quality.yml` (Docker) | Opt-in |
 | Include analysis | IWYU | `cpp-quality.yml` (Docker) | Opt-in |
+| Hardening verification | readelf (PIE, RELRO, NX, canary) | `cpp-quality.yml` (Docker) | Opt-in |
 
 clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Infrastructure lints (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan) run on the host. Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
 
@@ -339,6 +340,21 @@ The `release-hardened` CMake preset enables:
 | `-fstack-protector-strong` | Stack buffer overflow protection |
 | `-fcf-protection=full` | Control Flow Integrity (Intel CET) |
 | `-fPIE` / `-pie` | Position Independent Executable (ASLR) |
+
+### Hardening Verification
+
+The `hardening` job in `cpp-quality.yml` builds with the `release-hardened` preset (or a user script) and verifies the resulting ELF binaries using `readelf`:
+
+| Property | How | Pass Condition |
+|----------|-----|----------------|
+| PIE | `readelf -h` | Type is `DYN` (shared libs skip — always DYN) |
+| RELRO | `readelf -l` | `GNU_RELRO` segment present |
+| Full RELRO | `readelf -d` | `BIND_NOW` in dynamic section |
+| Stack canary | `readelf -s` | `__stack_chk_fail` symbol present |
+| FORTIFY | `readelf -s` | `__*_chk` symbol present (warning only) |
+| NX | `readelf -l` | `GNU_STACK` without execute flag |
+
+Standalone script: `scripts/check-hardening.sh <binary_path>...`
 
 ---
 
