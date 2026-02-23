@@ -127,8 +127,15 @@ jobs:
           git tag -a "$NEXT" -m "Release $NEXT"
           git push origin "$NEXT"
 
+      - name: Check for GitHub App credentials
+        if: steps.bump.outputs.skip != 'true'
+        id: app-check
+        env:
+          HAS_APP: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        run: echo "has_app=$HAS_APP" >> "$GITHUB_OUTPUT"
+
       - name: Generate GitHub App token
-        if: steps.bump.outputs.skip != 'true' && secrets.app_id != ''
+        if: steps.bump.outputs.skip != 'true' && steps.app-check.outputs.has_app == 'true'
         id: app-token
         uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
         with:
