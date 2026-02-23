@@ -190,7 +190,7 @@ on:
       enable_hardening:
         type: boolean
         default: false
-        description: 'Enable binary hardening verification (PIE, RELRO, stack canary, NX)'
+        description: 'Enable binary hardening verification (PIE, RELRO, stack canary, NX, CET)'
       hardening_script:
         type: string
         default: ''
@@ -202,7 +202,7 @@ on:
       hardening_skip_checks:
         type: string
         default: ''
-        description: 'Space-separated checks to skip: pie relro bindnow canary fortify nx'
+        description: 'Space-separated checks to skip: pie relro bindnow canary fortify nx cet'
       select_jobs:
         type: string
         default: 'all'
@@ -1993,6 +1993,30 @@ jobs:
                     BIN_FAIL=1
                   else
                     echo "  NX: PASS"
+                  fi
+                fi
+
+                # CET check (x86-64: IBT + SHSTK via -fcf-protection)
+                if ! is_skipped "cet"; then
+                  NOTE_PROPS=$(readelf -n "$binary" 2>/dev/null | grep -i "x86 feature:" || true)
+                  if [ -z "$NOTE_PROPS" ]; then
+                    echo "  CET: FAIL (no x86 feature properties)"
+                    echo "::error file=$binary::No CET properties — missing -fcf-protection"
+                    BIN_FAIL=1
+                  elif echo "$NOTE_PROPS" | grep -q "IBT" && echo "$NOTE_PROPS" | grep -q "SHSTK"; then
+                    echo "  CET: PASS (IBT + SHSTK)"
+                  elif echo "$NOTE_PROPS" | grep -q "IBT"; then
+                    echo "  CET: WARN (IBT only — missing SHSTK)"
+                    echo "::warning file=$binary::CET partial — IBT only, use -fcf-protection=full"
+                    WARNINGS=$((WARNINGS + 1))
+                  elif echo "$NOTE_PROPS" | grep -q "SHSTK"; then
+                    echo "  CET: WARN (SHSTK only — missing IBT)"
+                    echo "::warning file=$binary::CET partial — SHSTK only, use -fcf-protection=full"
+                    WARNINGS=$((WARNINGS + 1))
+                  else
+                    echo "  CET: FAIL (properties present but no IBT/SHSTK)"
+                    echo "::error file=$binary::CET features missing in .note.gnu.property"
+                    BIN_FAIL=1
                   fi
                 fi
 

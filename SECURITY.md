@@ -12,9 +12,7 @@
 
 If you discover a security vulnerability in this project, please report it responsibly.
 
-**Do not open a public GitHub issue for security vulnerabilities.**
-
-Instead, please email: **guzenfeld.pavel@gmail.com**
+Please report security vulnerabilities by [opening a GitHub issue](https://github.com/PavelGuzenfeld/standard/issues/new?labels=security&title=Security%3A+).
 
 Include:
 - Description of the vulnerability

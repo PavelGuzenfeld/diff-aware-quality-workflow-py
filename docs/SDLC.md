@@ -165,7 +165,7 @@ Only files changed in the PR are checked. Detection uses `git diff --name-only -
 | Thread safety | TSan | `cpp-quality.yml` (Docker) | Opt-in |
 | Code coverage | gcov/lcov + diff-cover | `cpp-quality.yml` (Docker) | Opt-in |
 | Include analysis | IWYU | `cpp-quality.yml` (Docker) | Opt-in |
-| Hardening verification | readelf (PIE, RELRO, NX, canary) | `cpp-quality.yml` (Docker) | Opt-in |
+| Hardening verification | readelf (PIE, RELRO, NX, canary, CET) | `cpp-quality.yml` (Docker) | Opt-in |
 
 clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Infrastructure lints (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan, Gitleaks secrets detection) run on the host. Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
 
@@ -355,6 +355,7 @@ The `hardening` job in `cpp-quality.yml` builds with the `release-hardened` pres
 | Stack canary | `readelf -s` | `__stack_chk_fail` symbol present |
 | FORTIFY | `readelf -s` | `__*_chk` symbol present (warning only) |
 | NX | `readelf -l` | `GNU_STACK` without execute flag |
+| CET | `readelf -n` | `.note.gnu.property` with IBT + SHSTK (x86-64, from `-fcf-protection=full`) |
 
 Standalone script: `scripts/check-hardening.sh <binary_path>...`
 

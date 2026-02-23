@@ -671,6 +671,27 @@ assert_no_match "$NX_EXECUTABLE_PATTERN"   '  GNU_RELRO      0x0000000000003e10 
 echo ""
 
 # =============================================================================
+echo "=== 11. CET (Control-flow Enforcement) patterns ==="
+# =============================================================================
+
+# --- CET detection (readelf -n output) ---
+CET_IBT_PATTERN='IBT'
+CET_SHSTK_PATTERN='SHSTK'
+CET_FEATURE_PATTERN='x86 feature:'
+
+assert_matches "$CET_FEATURE_PATTERN"  '      Properties: x86 feature: IBT, SHSTK'                  "x86 feature line detected"
+assert_matches "$CET_IBT_PATTERN"      '      Properties: x86 feature: IBT, SHSTK'                  "IBT detected in full CET"
+assert_matches "$CET_SHSTK_PATTERN"    '      Properties: x86 feature: IBT, SHSTK'                  "SHSTK detected in full CET"
+assert_matches "$CET_IBT_PATTERN"      '      Properties: x86 feature: IBT'                          "IBT-only detected"
+assert_matches "$CET_SHSTK_PATTERN"    '      Properties: x86 feature: SHSTK'                        "SHSTK-only detected"
+assert_no_match "$CET_FEATURE_PATTERN" '  GNU_STACK      0x0000000000000000 0x0000000000000000'      "GNU_STACK not matched as x86 feature"
+assert_no_match "$CET_IBT_PATTERN"     '      Properties: x86 feature: SHSTK'                        "SHSTK-only does not match IBT"
+assert_no_match "$CET_SHSTK_PATTERN"   '      Properties: x86 feature: IBT'                          "IBT-only does not match SHSTK"
+assert_no_match "$CET_FEATURE_PATTERN" '  Type:                              DYN (Shared object file)' "DYN type not matched as x86 feature"
+
+echo ""
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo "========================================"

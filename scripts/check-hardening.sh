@@ -12,9 +12,10 @@ set -euo pipefail
 #   4. CANARY     — __stack_chk_fail symbol present
 #   5. FORTIFY    — __*_chk symbol present (warning only — tiny binaries may lack these)
 #   6. NX         — GNU_STACK without execute flag
+#   7. CET        — .note.gnu.property with IBT/SHSTK (Control-flow Enforcement Technology)
 #
 # Options:
-#   --skip <check>   Skip a check (pie, relro, bindnow, canary, fortify, nx)
+#   --skip <check>   Skip a check (pie, relro, bindnow, canary, fortify, nx, cet)
 #                    May be repeated.
 #
 # Exit code: 0 = all pass, 1 = violations found
@@ -28,7 +29,7 @@ usage() {
     echo "  <path_or_glob>   One or more paths or globs to ELF binaries"
     echo ""
     echo "Options:"
-    echo "  --skip <check>   Skip a check: pie, relro, bindnow, canary, fortify, nx"
+    echo "  --skip <check>   Skip a check: pie, relro, bindnow, canary, fortify, nx, cet"
     echo "  -h, --help       Show this help message"
     echo ""
     echo "Checks:"
@@ -38,6 +39,7 @@ usage() {
     echo "  canary    __stack_chk_fail symbol present (stack protector)"
     echo "  fortify   __*_chk symbol present (FORTIFY_SOURCE) — warning only"
     echo "  nx        GNU_STACK without execute flag (non-executable stack)"
+    echo "  cet       .note.gnu.property with IBT/SHSTK (Control-flow Enforcement, x86-64)"
     exit 1
 }
 
@@ -176,6 +178,26 @@ for binary in "${BINARIES[@]}"; do
             BIN_FAIL=1
         else
             echo "  NX: PASS (GNU_STACK without execute flag)"
+        fi
+    fi
+
+    # 7. CET check — .note.gnu.property with IBT/SHSTK (x86-64 only)
+    if ! is_skipped "cet"; then
+        NOTE_PROPS=$(readelf -n "$binary" 2>/dev/null | grep -i "x86 feature:" || true)
+        if [[ -z "$NOTE_PROPS" ]]; then
+            echo "  CET: FAIL (no x86 feature properties — missing -fcf-protection)"
+            BIN_FAIL=1
+        elif echo "$NOTE_PROPS" | grep -q "IBT" && echo "$NOTE_PROPS" | grep -q "SHSTK"; then
+            echo "  CET: PASS (IBT + SHSTK enabled)"
+        elif echo "$NOTE_PROPS" | grep -q "IBT"; then
+            echo "  CET: WARN (IBT only — missing SHSTK, use -fcf-protection=full)"
+            WARNINGS=$((WARNINGS + 1))
+        elif echo "$NOTE_PROPS" | grep -q "SHSTK"; then
+            echo "  CET: WARN (SHSTK only — missing IBT, use -fcf-protection=full)"
+            WARNINGS=$((WARNINGS + 1))
+        else
+            echo "  CET: FAIL (x86 feature properties present but no IBT/SHSTK)"
+            BIN_FAIL=1
         fi
     fi
 

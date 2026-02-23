@@ -191,7 +191,7 @@ jobs:
 | `enable_hardening` | `false` | Enable binary hardening verification (opt-in) |
 | `hardening_script` | `''` | Script to build with hardening flags |
 | `hardening_binary_paths` | `build-hardened/bin/*` | Space-separated globs to ELF binaries to check |
-| `hardening_skip_checks` | `''` | Space-separated checks to skip: pie relro bindnow canary fortify nx |
+| `hardening_skip_checks` | `''` | Space-separated checks to skip: pie relro bindnow canary fortify nx cet |
 
 **IWYU:**
 

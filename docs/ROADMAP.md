@@ -22,7 +22,7 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | TSan | Thread sanitizer | Opt-in |
 | gcov/lcov | Code coverage + diff-cover | Opt-in |
 | libFuzzer | Continuous fuzzing with ASan + corpus caching | Template (`ci-fuzz.yml`) |
-| Hardening | PIE, RELRO, stack canary, NX verification via readelf | Opt-in |
+| Hardening | PIE, RELRO, stack canary, NX, CET verification via readelf | Opt-in |
 
 **Script & Container Linting:**
 
