@@ -18,8 +18,13 @@ This document describes the full quality and security process enforced by this t
    diff-clang-format.sh        script & container linting
    diff-file-naming.sh           ShellCheck (shell scripts)
                                   Hadolint (Dockerfiles)
+                                  cmake-lint (CMake files)
  CMake presets
-   debug-asan                  banned pattern checks
+                                security & supply chain
+   debug-asan                    dangerous-workflow audit
+   debug-tsan                    binary-artifact scan
+   release-hardened
+                                banned pattern checks
    debug-tsan                    cout/printf ban
    release-hardened              raw new/delete ban
                                   gtest/gbenchmark ban
@@ -143,20 +148,23 @@ Workflow: [`cpp-quality.yml`](../.github/workflows/cpp-quality.yml)
 
 Only files changed in the PR are checked. Detection uses `git diff --name-only --diff-filter=ACMR` against the base branch. Pre-existing issues in untouched code never block PRs.
 
-| Check | Tool | Runs in | Default |
-|-------|------|---------|---------|
-| Static analysis | clang-tidy | Docker | Always |
-| Bug/style checking | cppcheck | Docker | Always |
-| Code formatting | clang-format | Docker | Opt-in |
-| CWE lexical scan | flawfinder | Host | Opt-in |
-| Shell script linting | ShellCheck | Host | Opt-in |
-| Dockerfile linting | Hadolint | Host | Opt-in |
-| ASan + UBSan | sanitizer build | Docker | Opt-in |
-| Thread safety | TSan | Docker | Opt-in |
-| Code coverage | gcov/lcov + diff-cover | Docker | Opt-in |
-| Include analysis | IWYU | Docker | Opt-in |
+| Check | Tool | Workflow | Default |
+|-------|------|----------|---------|
+| Static analysis | clang-tidy | `cpp-quality.yml` (Docker) | Always |
+| Bug/style checking | cppcheck | `cpp-quality.yml` (Docker) | Always |
+| Code formatting | clang-format | `cpp-quality.yml` (Docker) | Opt-in |
+| CWE lexical scan | flawfinder | `cpp-quality.yml` (Host) | Opt-in |
+| Shell script linting | ShellCheck | `infra-lint.yml` (Host) | Opt-in |
+| Dockerfile linting | Hadolint | `infra-lint.yml` (Host) | Opt-in |
+| CMake file linting | cmake-lint | `infra-lint.yml` (Host) | Opt-in |
+| Dangerous-workflow audit | custom script | `infra-lint.yml` (Host) | Opt-in |
+| Binary-artifact scan | custom script | `infra-lint.yml` (Host) | Opt-in |
+| ASan + UBSan | sanitizer build | `cpp-quality.yml` (Docker) | Opt-in |
+| Thread safety | TSan | `cpp-quality.yml` (Docker) | Opt-in |
+| Code coverage | gcov/lcov + diff-cover | `cpp-quality.yml` (Docker) | Opt-in |
+| Include analysis | IWYU | `cpp-quality.yml` (Docker) | Opt-in |
 
-clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Flawfinder, ShellCheck, and Hadolint run on the host (no compilation needed). Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
+clang-tidy, cppcheck, and clang-format run inside the caller's Docker image, so they see the exact toolchain, headers, and `compile_commands.json` that the project uses. Infrastructure lints (ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan) run on the host. Sanitizers, coverage, and IWYU run inside Docker with full build toolchain.
 
 ### Diff-Aware Linting (Python)
 
@@ -195,6 +203,8 @@ Each workflow posts a summary comment on the PR with a hidden HTML marker. On su
 | C++ quality | `<!-- cpp-quality-report -->` |
 | Python quality | `<!-- python-quality-report -->` |
 | Python SAST | `<!-- python-sast-report -->` |
+| Infrastructure lint | `<!-- infra-lint-report -->` |
+| SBOM & supply chain | `<!-- sbom-report -->` |
 
 ### GitHub Annotations
 
@@ -337,11 +347,11 @@ The `release-hardened` CMake preset enables:
 | Phase | Trigger | Checks |
 |-------|---------|--------|
 | Pre-commit | `git commit` | clang-format, clang-tidy, cppcheck, whitespace, YAML |
-| PR (C++) | Pull request | clang-tidy, cppcheck, clang-format, flawfinder, ShellCheck, Hadolint, file naming, banned patterns |
+| PR (C++) | Pull request | clang-tidy, cppcheck, clang-format, flawfinder, file naming, banned patterns |
+| PR (Infra) | Pull request | ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan (all opt-in) |
 | PR (Runtime) | Pull request | ASan/UBSan, TSan, coverage, IWYU (all opt-in) |
 | PR (Python) | Pull request | ruff/flake8, pytest, diff-cover |
 | PR (SAST) | Pull request | Semgrep, pip-audit, CodeQL (optional) |
 | PR (SBOM) | Pull request | Syft, Grype, source SBOM, license check |
-| PR (Supply Chain) | Pull request | Dangerous-workflow audit, binary-artifact scan (opt-in via infra-lint) |
 | Post-merge | Schedule/push | CodeQL, Infer, fuzz corpus runs |
 | Local dev | Manual | Scripts, sanitizer presets, CMake warnings |

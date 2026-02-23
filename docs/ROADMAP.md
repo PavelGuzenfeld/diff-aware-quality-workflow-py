@@ -28,6 +28,9 @@ Reusable workflows provide diff-aware quality gates on every PR:
 |------|---------|------|
 | ShellCheck | Shell script linting (`.sh`, `.bash`) | Opt-in, report-only |
 | Hadolint | Dockerfile linting (`Dockerfile*`) | Opt-in, report-only |
+| cmake-lint | CMake file linting (`CMakeLists.txt`, `*.cmake`) | Opt-in, report-only |
+| Dangerous-workflow audit | Detects `pull_request_target` misuse and injection patterns | Opt-in |
+| Binary-artifact scan | Detects committed binary files (`.exe`, `.dll`, `.so`, etc.) | Opt-in |
 
 **Python:**
 
@@ -43,6 +46,8 @@ Reusable workflows provide diff-aware quality gates on every PR:
 | Syft | Container SBOM generation (SPDX + CycloneDX) | Opt-in |
 | Grype | Vulnerability scanning against CVE databases | Opt-in |
 | License check | Dependency license policy validation | Opt-in |
+| SLSA provenance | Build attestation for releases (`actions/attest-build-provenance`) | Opt-in |
+| Dependabot | Dependency update monitoring (GitHub Actions, pip, etc.) | Config file |
 
 ## Coding Conventions & Whitelisted Patterns
 
@@ -294,8 +299,14 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | SBOM generation (Syft + source) | Done | Docker image |
 | Grype vulnerability scanning | Done | Merged SBOM |
 | License policy check | Done | SBOM workflow |
-| ShellCheck (shell scripts) | Done | cpp-quality.yml |
-| Hadolint (Dockerfiles) | Done | cpp-quality.yml |
+| ShellCheck (shell scripts) | Done | infra-lint.yml |
+| Hadolint (Dockerfiles) | Done | infra-lint.yml |
+| cmake-lint (CMake files) | Done | infra-lint.yml |
+| Dangerous-workflow audit | Done | infra-lint.yml |
+| Binary-artifact scan | Done | infra-lint.yml |
+| SLSA provenance attestation | Done | auto-release.yml |
+| SECURITY.md + template | Done | - |
+| Dependabot config + template | Done | - |
 | ASan/UBSan sanitizer job | Done | cpp-quality.yml |
 | TSan thread sanitizer job | Done | cpp-quality.yml |
 | Code coverage (gcov/lcov) | Done | cpp-quality.yml |

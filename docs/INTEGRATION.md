@@ -536,7 +536,7 @@ with:
 
 ## Auto-Release Setup
 
-The `auto-release.yml` reusable workflow auto-versions your project on every push to `main` using conventional commit prefixes. It creates an annotated git tag and a GitHub Release with auto-generated notes.
+The `auto-release.yml` reusable workflow auto-versions your project on every push to `main` using conventional commit prefixes. It creates an annotated git tag, a GitHub Release with auto-generated notes, and optionally a SLSA provenance attestation.
 
 ### 1. Add the workflow
 
@@ -573,6 +573,7 @@ If no `v*` tag exists, the first release starts from `v0.0.1`.
 | Input | Default | Description |
 |-------|---------|-------------|
 | `default_bump` | `patch` | Default bump when no conventional commit prefix is detected |
+| `enable_provenance` | `false` | Enable SLSA provenance attestation for releases (opt-in) |
 
 ### How it works
 

@@ -8,6 +8,11 @@
 #   2. new/delete-ban patterns (true positives & false positives)
 #   3. doctest-enforce patterns (gtest & google benchmark detection)
 #   4. file-naming snake_case validation
+#   5. file-naming built-in exemptions
+#   6. End-to-end: diff-file-naming.sh
+#   7. End-to-end: package naming (include/<pkg>/)
+#   8. Dangerous-workflow patterns (injection regex)
+#   9. Binary-artifact patterns (extension matching)
 #
 # Exit code: 0 = all pass, 1 = failures found
 

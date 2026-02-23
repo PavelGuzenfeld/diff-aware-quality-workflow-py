@@ -16,6 +16,8 @@ This repo provides reusable GitHub Actions workflows for diff-aware C++ and Pyth
   sast-python.yml           Reusable Python SAST workflow (Semgrep, pip-audit, CodeQL)
   sbom.yml                  Reusable SBOM & supply chain workflow (Syft, Grype, license check)
   version-check.yml         Reusable version validation workflow (SemVer in package.xml, CMakeLists.txt, pyproject.toml)
+  auto-release.yml          Reusable auto-release (conventional commits → semver tag → GitHub Release → SLSA provenance)
+  release.yml               Triggers auto-release on push to main
   self-test.yml             Dogfood: runs python-quality on this repo's demo code
   gatekeeper-checks.yml     Push checks for this repo (multi-version Python)
   pull-request-feedback.yml PR feedback for this repo
@@ -35,7 +37,7 @@ scripts/
   filter-excludes.sh         Filter file lists against exclusion patterns
 configs/                    Drop-in configs, CI templates, and agent instructions (17 files)
 tests/
-  test_patterns.sh          Pattern validation tests (109 tests, bash)
+  test_patterns.sh          Pattern validation tests (154 tests, bash)
   test_calculator.py        Python demo tests (pytest)
 docs/
   SDLC.md                   Full software development lifecycle document
@@ -57,7 +59,7 @@ pytest tests/test_calculator.py
 # Self-test workflow runs python-quality.yml on the demo code (CI only)
 ```
 
-`test_patterns.sh` is the primary test suite. It validates grep/regex patterns used by the workflow jobs and scripts. All 109 tests must pass.
+`test_patterns.sh` is the primary test suite. It validates grep/regex patterns used by the workflow jobs and scripts. All 154 tests must pass.
 
 ## Adding a New Check
 

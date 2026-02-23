@@ -8,7 +8,7 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 
 - **Diff-aware** — only files changed in the PR are checked; legacy code never blocks merges
 - **C++ quality** — clang-tidy, cppcheck, clang-format, flawfinder inside your Docker image
-- **Infrastructure lint** — ShellCheck, Hadolint, cmake-lint (no Docker image needed)
+- **Infrastructure lint** — ShellCheck, Hadolint, cmake-lint, dangerous-workflow audit, binary-artifact scan (no Docker image needed)
 - **Runtime analysis** — ASan/UBSan, TSan, gcov/lcov coverage, IWYU (all opt-in)
 - **Python quality** — ruff/flake8 + pytest + diff-cover on changed lines
 - **Security scanning** — Semgrep, CodeQL, Infer, pip-audit
@@ -17,7 +17,7 @@ Reusable GitHub Actions for C++ and Python quality gates. Diff-aware linting, SA
 - **Naming enforcement** — snake_case files and `include/<package_name>/` directories, identifier naming via clang-tidy
 - **Hardening templates** — sanitizer presets, multi-compiler CI, fuzzing, production flags
 - **PR feedback** — inline annotations + auto-updating summary comments
-- **Auto-release** — conventional-commit version bumps, git tags, and GitHub Releases on push to main
+- **Auto-release** — conventional-commit version bumps, git tags, GitHub Releases, and SLSA provenance on push to main
 
 ## Quality Scoreboard
 
@@ -448,7 +448,7 @@ scripts/
   filter-excludes.sh         Filter file lists against exclusion patterns
 configs/                    Drop-in configs, CI templates, and agent instructions (17 files)
 tests/
-  test_patterns.sh          Pattern validation tests (109 tests)
+  test_patterns.sh          Pattern validation tests (154 tests)
   test_calculator.py        Python demo tests
 docs/
   SDLC.md                   Full software development lifecycle document
