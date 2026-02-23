@@ -142,7 +142,7 @@ jobs:
 
       - name: Attest release provenance
         if: steps.bump.outputs.skip != 'true' && inputs.enable_provenance
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
           subject-name: ${{ github.repository }}-source-${{ steps.version.outputs.next }}.tar.gz
           subject-digest: sha256:${{ steps.digest.outputs.sha256 }}
