@@ -1,0 +1,28 @@
+# Allstar — Branch Protection Policy
+#
+# Enforces branch protection rules on the default branch.
+# action: fix will auto-configure settings; issue will only open an issue.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue | fix
+
+enforceDefault: true                # enforce on the default branch
+requireApproval: true               # require PR approvals before merge
+approvalCount: 1                    # minimum number of approvals
+dismissStale: true                  # dismiss approvals on new push
+blockForce: true                    # block force pushes to protected branches
+enforceOnAdmins: false              # set true to apply rules to admins too
+requireUpToDateBranch: false        # require branch is up to date before merge
+
+# requireStatusChecks:             # uncomment and list your required checks
+#   - context: "clang-format"
+#   - context: "Clang-Tidy (CERT + Core Guidelines)"
+#   - context: "Cppcheck (CWE)"
+#   - context: "Flawfinder (CWE)"
+
+# requireCodeOwnerReviews: false
+# requireSignedCommits: false

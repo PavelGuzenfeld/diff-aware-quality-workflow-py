@@ -1,0 +1,15 @@
+# Allstar — Binary Artifacts Policy
+#
+# Detects committed binary files (.exe, .dll, .so, .jar, .pyc, .whl, etc.)
+# Complements the binary-artifact detection in standard's infra-lint workflow.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue
+
+# ignorePaths:                     # repo-level: exclude specific directories
+#   - "vendor/bin"
+#   - "third_party/prebuilt"

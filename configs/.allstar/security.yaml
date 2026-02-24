@@ -1,0 +1,11 @@
+# Allstar — Security Policy
+#
+# Requires a non-empty SECURITY.md in each enrolled repo.
+# Use configs/SECURITY.md from standard as a starting template.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue

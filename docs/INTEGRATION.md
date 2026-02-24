@@ -764,6 +764,48 @@ jobs:
 
 This creates a SLSA provenance attestation for each release using `actions/attest-build-provenance`.
 
+### 7. Enable Allstar Policy Enforcement
+
+[Allstar](https://github.com/ossf/allstar) is an OpenSSF GitHub App that continuously monitors repos and enforces security policies via config files — no manual UI settings needed.
+
+**Prerequisites:** Install the [Allstar GitHub App](https://github.com/apps/allstar-app) on your organization or repository.
+
+**Per-repo opt-in** (no org-wide setup required):
+
+```bash
+mkdir -p .allstar
+cp configs/.allstar/*.yaml .allstar/
+```
+
+This enables:
+
+| Policy | What it enforces |
+|--------|-----------------|
+| `branch_protection.yaml` | PR approvals, block force push, dismiss stale reviews |
+| `security.yaml` | Require SECURITY.md |
+| `binary_artifacts.yaml` | Detect committed binaries (.exe, .so, .jar, .pyc) |
+| `dangerous_workflow.yaml` | Detect pull_request_target injection |
+| `outside.yaml` | Block outside collaborators from admin access |
+| `actions.yaml` | Require or deny specific GitHub Actions |
+
+**Org-wide enforcement** (recommended for teams):
+
+1. Create a repository named `.allstar` in your GitHub org
+2. Copy the templates into it:
+   ```bash
+   cp configs/.allstar/*.yaml .
+   ```
+3. Edit `allstar.yaml` — uncomment the org-wide section and comment out `optIn`:
+   ```yaml
+   optConfig:
+     optOutStrategy: true
+     optOutArchivedRepos: true
+     optOutForkedRepos: true
+   ```
+4. Edit `branch_protection.yaml` — set `action: fix` to auto-configure branch protection settings instead of just opening issues.
+
+**Relationship to standard's CI checks:** Allstar and standard's reusable workflows are complementary. Allstar enforces GitHub *platform settings* (branch protection, collaborator access) continuously. Standard's workflows enforce *code quality* (formatting, linting, security analysis) on each PR.
+
 ---
 
 ## Trend Dashboard Setup

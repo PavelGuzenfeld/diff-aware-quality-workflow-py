@@ -1,0 +1,22 @@
+# Allstar — GitHub Actions Policy
+#
+# Require or deny specific GitHub Actions across repos.
+# Useful for enforcing harden-runner or blocking unverified actions.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue
+
+# Example: require harden-runner in all workflows
+# groups:
+#   - name: "supply-chain"
+#     rules:
+#       - name: "require-harden-runner"
+#         method: require
+#         priority: high
+#         actions:
+#           - name: "step-security/harden-runner"
+#             version: ">=2.0.0"
