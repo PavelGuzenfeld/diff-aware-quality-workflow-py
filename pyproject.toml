@@ -1,6 +1,6 @@
 [project]
 name = "standard"
-version = "0.9.0"
+version = "0.10.0"
 description = "Reusable diff-aware code quality workflows for GitHub Actions (C++ and Python)"
 readme = "README.md"
 requires-python = ">=3.8"
