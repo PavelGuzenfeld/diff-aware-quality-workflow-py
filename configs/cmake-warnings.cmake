@@ -43,5 +43,8 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(warnings INTERFACE
     -Wno-unknown-warning-option
+    -Wexit-time-destructors
+    -Wglobal-constructors
+    -Wlarge-by-value-copy=24
   )
 endif()
