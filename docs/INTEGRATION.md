@@ -227,7 +227,25 @@ cp configs/AGENTS.md AGENTS.md
 
 Edit the "Opt-in" section to match which checks your project has enabled. This tells agents what conventions to follow so generated code passes CI on the first push.
 
-### 6. Add Pre-commit Hooks
+### 6. Enable Copilot Code Review
+
+Set up [GitHub Copilot code review](https://docs.github.com/en/copilot/tutorials/use-custom-instructions) so Copilot enforces the standard when reviewing PRs:
+
+```bash
+# Copy repo-wide review instructions
+cp configs/.github/copilot-instructions.md .github/copilot-instructions.md
+
+# Copy language-specific review rules
+mkdir -p .github/instructions
+cp configs/.github/instructions/cpp.instructions.md .github/instructions/
+cp configs/.github/instructions/python.instructions.md .github/instructions/
+```
+
+These files use path-specific `applyTo` frontmatter so C++ rules only apply to C++ files and Python rules only apply to Python files. Remove whichever language file is not relevant to your project.
+
+To enable Copilot as an automatic PR reviewer, go to **Settings > Copilot > Code review** in your repository and enable it. You can also request a review from `@copilot` on any PR.
+
+### 7. Add Pre-commit Hooks
 
 **Option A — Use the installer script** (recommended):
 
@@ -243,7 +261,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-### 7. Add CMake Presets & Warning Flags
+### 8. Add CMake Presets & Warning Flags
 
 ```bash
 cp configs/CMakePresets-sanitizers.json CMakePresets.json
@@ -264,7 +282,7 @@ cmake --preset debug-asan && cmake --build --preset debug-asan
 ctest --test-dir build-asan --output-on-failure
 ```
 
-### 8. Add Fuzz Testing
+### 9. Add Fuzz Testing
 
 Copy the fuzz CI template:
 
