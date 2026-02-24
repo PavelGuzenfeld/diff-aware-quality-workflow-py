@@ -15,7 +15,6 @@ Checks: >-
   -cppcoreguidelines-avoid-magic-numbers,
   -bugprone-easily-swappable-parameters,
   -cppcoreguidelines-non-private-member-variables-in-classes,
-  -performance-unnecessary-value-param,
   -readability-redundant-access-specifiers
 WarningsAsErrors: ''
 HeaderFilterRegex: ''
