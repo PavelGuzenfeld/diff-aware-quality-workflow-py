@@ -34,7 +34,7 @@ jobs:
         id: changed
         run: |
           BASE="origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
-          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- | grep -E '(package\.xml|CMakeLists\.txt|pyproject\.toml)$' || true)
+          FILES=$(git diff --name-only --diff-filter=ACMR "$BASE" -- | grep -E '(package\.json|package\.xml|CMakeLists\.txt|pyproject\.toml)$' || true)
           if [ -z "$FILES" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "No version files changed."
@@ -90,6 +90,10 @@ jobs:
             TYPE=""
 
             case "$f" in
+              *package.json)
+                VER=$(grep -oP '"version"\s*:\s*"\K[^"]+' "$f" 2>/dev/null || true)
+                TYPE="package.json"
+                ;;
               *package.xml)
                 VER=$(grep -oP '(?<=<version>)[^<]+' "$f" 2>/dev/null || true)
                 TYPE="package.xml"
@@ -160,7 +164,7 @@ jobs:
               body += report;
             }
 
-            body += '\n---\n*Checked `package.xml`, `CMakeLists.txt`, `pyproject.toml` — diff-aware.*';
+            body += '\n---\n*Checked `package.json`, `package.xml`, `CMakeLists.txt`, `pyproject.toml` — diff-aware.*';
 
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
