@@ -1,0 +1,11 @@
+# Allstar — Dangerous Workflow Policy
+#
+# Detects pull_request_target misuse and injection vectors in GitHub Actions.
+# Complements the dangerous-workflow audit in standard's infra-lint workflow.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue

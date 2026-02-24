@@ -128,6 +128,7 @@ Note: cmake_template's former unique advantages (hardening, fuzzing, CMakePreset
 - ~~Secrets detection~~ → enable_gitleaks in infra-lint.yml
 - ~~CodeQL C++ weekly~~ → configs/ci-codeql.yml template
 - ~~Infer C++ analysis~~ → configs/ci-infer.yml template
+- ~~Allstar policy templates~~ → configs/.allstar/ (branch protection, security policy, binary artifacts, dangerous workflows, outside collaborators, actions)
 
 ---
 

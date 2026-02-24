@@ -1,0 +1,23 @@
+# Allstar — Repo-level opt-in configuration
+#
+# Place this file at: .allstar/allstar.yaml
+#
+# To opt in a single repo without org-wide setup, set optIn: true.
+# To opt in all repos org-wide, create a `.allstar` repository in your
+# GitHub org and use optOutStrategy instead.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  # --- Per-repo self-enrollment ---
+  optIn: true
+
+  # --- Org-wide mode (use in .allstar repo instead) ---
+  # optOutStrategy: true          # all repos enabled, opt out specific ones
+  # optOutRepos: []
+  # optOutArchivedRepos: true
+  # optOutForkedRepos: true
+  # optOutPrivateRepos: false
+  # disableRepoOverride: false    # true = repos cannot override org policy
+
+issueLabel: "allstar"

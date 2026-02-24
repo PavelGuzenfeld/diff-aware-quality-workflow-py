@@ -1,0 +1,14 @@
+# Allstar — Outside Collaborators Policy
+#
+# Restricts outside collaborator permissions.
+# Prevents accidental admin access grants to non-org members.
+#
+# Docs: https://github.com/ossf/allstar
+
+optConfig:
+  optIn: true
+
+action: issue                       # log | issue
+
+pushAllowed: true                   # allow outside collaborators push access
+adminAllowed: false                 # block outside collaborators admin access
