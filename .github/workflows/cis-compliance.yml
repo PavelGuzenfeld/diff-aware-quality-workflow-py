@@ -1,0 +1,231 @@
+name: CIS Supply Chain Compliance
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        type: string
+        default: ''
+        description: 'Branch to scan (default: current branch or main/master)'
+      min_score:
+        type: number
+        default: 0
+        description: 'Minimum passing score (0-35). Workflow fails if score is below this. 0 = report only.'
+      chain_bench_version:
+        type: string
+        default: '0.1.10'
+        description: 'chain-bench version to install'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+    secrets:
+      github_token:
+        required: false
+        description: 'GitHub token with repo read access (defaults to GITHUB_TOKEN)'
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+  security-events: read
+
+jobs:
+  cis-scan:
+    name: CIS SSC v1.0 Scan
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Detect architecture
+        id: arch
+        run: |
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64)  echo "suffix=Linux-64bit" >> $GITHUB_OUTPUT ;;
+            aarch64) echo "suffix=Linux-ARM64" >> $GITHUB_OUTPUT ;;
+            *)       echo "suffix=Linux-64bit" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Install chain-bench
+        run: |
+          VERSION="${{ inputs.chain_bench_version }}"
+          SUFFIX="${{ steps.arch.outputs.suffix }}"
+          URL="https://github.com/aquasecurity/chain-bench/releases/download/v${VERSION}/chain-bench_${VERSION}_${SUFFIX}.tar.gz"
+          echo "Downloading chain-bench v${VERSION} for ${SUFFIX}..."
+          curl -sL "$URL" -o /tmp/chain-bench.tar.gz
+          tar -xzf /tmp/chain-bench.tar.gz -C /tmp chain-bench
+          chmod +x /tmp/chain-bench
+          /tmp/chain-bench version || echo "chain-bench installed"
+
+      - name: Determine branch
+        id: branch
+        run: |
+          BRANCH="${{ inputs.branch }}"
+          if [ -z "$BRANCH" ]; then
+            BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          fi
+          echo "name=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Run chain-bench scan
+        id: scan
+        env:
+          SCAN_TOKEN: ${{ secrets.github_token || github.token }}
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}"
+          BRANCH="${{ steps.branch.outputs.name }}"
+
+          echo "Scanning ${REPO_URL} branch=${BRANCH}..."
+          /tmp/chain-bench \
+            --repository-url "$REPO_URL" \
+            --branch "$BRANCH" \
+            --access-token "$SCAN_TOKEN" \
+            --output-file /tmp/cis-results.json \
+            2>&1 | tee /tmp/cis-scan.log || true
+
+          # Parse results
+          if [ -f /tmp/cis-results.json ]; then
+            PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
+            FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
+            UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
+          else
+            # Fallback: parse from log output
+            PASSED=$(grep -c "PASSED" /tmp/cis-scan.log || echo "0")
+            FAILED=$(grep -c "FAILED" /tmp/cis-scan.log || echo "0")
+            UNKNOWN=$(grep -c "UNKNOWN" /tmp/cis-scan.log || echo "0")
+          fi
+
+          TOTAL=$((PASSED + FAILED + UNKNOWN))
+          if [ "$TOTAL" -eq 0 ]; then TOTAL=35; fi
+
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "unknown=$UNKNOWN" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+
+          PERCENT=0
+          if [ "$TOTAL" -gt 0 ]; then
+            PERCENT=$((PASSED * 100 / TOTAL))
+          fi
+          echo "percent=$PERCENT" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "═══════════════════════════════════════"
+          echo "  CIS SSC v1.0: ${PASSED}/${TOTAL} (${PERCENT}%)"
+          echo "  Passed: ${PASSED} | Failed: ${FAILED} | Unknown: ${UNKNOWN}"
+          echo "═══════════════════════════════════════"
+
+      - name: Generate detailed report
+        id: report
+        if: always()
+        run: |
+          PASSED="${{ steps.scan.outputs.passed }}"
+          FAILED="${{ steps.scan.outputs.failed }}"
+          TOTAL="${{ steps.scan.outputs.total }}"
+          PERCENT="${{ steps.scan.outputs.percent }}"
+          BRANCH="${{ steps.branch.outputs.name }}"
+          MIN_SCORE="${{ inputs.min_score }}"
+
+          # Build markdown report
+          {
+            echo "## CIS Software Supply Chain v1.0"
+            echo ""
+            echo "**Branch:** \`${BRANCH}\` | **Score:** ${PASSED}/${TOTAL} (${PERCENT}%)"
+            if [ "$MIN_SCORE" -gt 0 ]; then
+              if [ "$PASSED" -ge "$MIN_SCORE" ]; then
+                echo "**Threshold:** ${MIN_SCORE}/${TOTAL} — **PASS**"
+              else
+                echo "**Threshold:** ${MIN_SCORE}/${TOTAL} — **FAIL**"
+              fi
+            fi
+            echo ""
+            echo "<details><summary>Detailed Results</summary>"
+            echo ""
+
+            if [ -f /tmp/cis-results.json ]; then
+              echo "| ID | Control | Result |"
+              echo "|:---|:--------|:------:|"
+              jq -r '
+                .Results[].Results[] |
+                if .Result == 0 then
+                  "| \(.ID) | \(.Name) | ✅ PASS |"
+                elif .Result == 1 then
+                  "| \(.ID) | \(.Name) | ❌ FAIL |"
+                else
+                  "| \(.ID) | \(.Name) | ⚠️ UNKNOWN |"
+                end
+              ' /tmp/cis-results.json 2>/dev/null || echo "*(JSON parsing failed — see scan log)*"
+            else
+              echo "*(Detailed JSON not available — see scan log artifact)*"
+            fi
+
+            echo ""
+            echo "</details>"
+            echo ""
+            echo "---"
+            echo "<sub>Scanned by <a href=\"https://github.com/aquasecurity/chain-bench\">chain-bench</a> via <a href=\"https://github.com/PavelGuzenfeld/standard\">standard</a></sub>"
+          } > /tmp/cis-report.md
+
+          cat /tmp/cis-report.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cis-compliance-report
+          path: |
+            /tmp/cis-results.json
+            /tmp/cis-scan.log
+            /tmp/cis-report.md
+          retention-days: 90
+        continue-on-error: true
+
+      - name: Post PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- cis-compliance-report -->';
+
+            let body = marker + '\n';
+            try {
+              body += fs.readFileSync('/tmp/cis-report.md', 'utf8');
+            } catch {
+              body += '## CIS SSC v1.0\n\n⚠️ Report generation failed — check workflow logs.';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
+
+      - name: Check threshold
+        if: inputs.min_score > 0
+        run: |
+          PASSED=${{ steps.scan.outputs.passed }}
+          MIN=${{ inputs.min_score }}
+          if [ "$PASSED" -lt "$MIN" ]; then
+            echo "::error::CIS compliance score ${PASSED}/35 is below minimum threshold ${MIN}/35"
+            exit 1
+          fi
+          echo "CIS compliance score ${PASSED}/35 meets threshold ${MIN}/35"
