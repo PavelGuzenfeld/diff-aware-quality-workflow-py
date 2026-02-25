@@ -1,0 +1,150 @@
+name: Scheduled Health Check
+
+on:
+  workflow_call:
+    inputs:
+      issue_title:
+        type: string
+        default: '[SCHEDULED-BUILD] CI failure detected'
+        description: 'Title for auto-created issue on failure'
+      issue_labels:
+        type: string
+        default: 'bug,ci'
+        description: 'Comma-separated labels for the auto-created issue'
+      upstream_workflow:
+        type: string
+        required: true
+        description: 'Name of the upstream workflow to monitor (e.g., "CI Tests")'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-health:
+    name: Check CI Health
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check upstream workflow status
+        id: check
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const workflowName = '${{ inputs.upstream_workflow }}';
+
+            // Get the most recent run of the upstream workflow
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event: 'schedule',
+              status: 'completed',
+              per_page: 5,
+            });
+
+            const matching = runs.workflow_runs.filter(r => r.name === workflowName);
+            if (matching.length === 0) {
+              core.info(`No completed scheduled runs found for "${workflowName}"`);
+              core.setOutput('failed', 'false');
+              return;
+            }
+
+            const latest = matching[0];
+            const failed = latest.conclusion !== 'success';
+            core.setOutput('failed', failed ? 'true' : 'false');
+            core.setOutput('run_url', latest.html_url);
+            core.setOutput('conclusion', latest.conclusion);
+            core.setOutput('run_date', latest.updated_at);
+
+            if (failed) {
+              core.warning(`${workflowName} scheduled run ${latest.conclusion}: ${latest.html_url}`);
+            } else {
+              core.info(`${workflowName} scheduled run passed: ${latest.html_url}`);
+            }
+
+      - name: Create or update issue on failure
+        if: steps.check.outputs.failed == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const title = '${{ inputs.issue_title }}';
+            const labels = '${{ inputs.issue_labels }}'.split(',').map(l => l.trim()).filter(Boolean);
+            const runUrl = '${{ steps.check.outputs.run_url }}';
+            const conclusion = '${{ steps.check.outputs.conclusion }}';
+            const runDate = '${{ steps.check.outputs.run_date }}';
+
+            // Check for existing open issue with same title
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: labels.join(','),
+              per_page: 50,
+            });
+
+            const existing = issues.find(i => i.title === title);
+
+            const body = `## Scheduled CI Failure\n\n` +
+              `| Field | Value |\n|-------|-------|\n` +
+              `| Conclusion | \`${conclusion}\` |\n` +
+              `| Date | ${runDate} |\n` +
+              `| Run | ${runUrl} |\n\n` +
+              `This issue was automatically created/updated because a scheduled CI run failed.\n` +
+              `It will be automatically closed when the next scheduled run passes.\n\n` +
+              `---\n<sub>Powered by <a href="https://github.com/PavelGuzenfeld/standard">standard</a> scheduled-health workflow</sub>`;
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `### Update — ${runDate}\n\nScheduled run still failing (\`${conclusion}\`): ${runUrl}`,
+              });
+              core.info(`Updated existing issue #${existing.number}`);
+            } else {
+              const { data: issue } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: labels,
+              });
+              core.info(`Created issue #${issue.number}`);
+            }
+
+      - name: Close issue on recovery
+        if: steps.check.outputs.failed == 'false'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const title = '${{ inputs.issue_title }}';
+            const labels = '${{ inputs.issue_labels }}'.split(',').map(l => l.trim()).filter(Boolean);
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: labels.join(','),
+              per_page: 50,
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `### Resolved\n\nScheduled CI run is passing again. Auto-closing.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`Closed issue #${existing.number} — CI recovered`);
+            }

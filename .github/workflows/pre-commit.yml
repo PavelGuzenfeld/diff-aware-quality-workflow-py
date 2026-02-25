@@ -1,0 +1,76 @@
+name: Pre-commit
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        type: string
+        default: '3.13'
+        description: 'Python version for pre-commit'
+      config_file:
+        type: string
+        default: '.pre-commit-config.yaml'
+        description: 'Path to pre-commit config file'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pre-commit:
+    name: Pre-commit
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout PR head (for pull_request_target)
+        if: github.event_name == 'pull_request_target'
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Run pre-commit (push)
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        with:
+          extra_args: --config ${{ inputs.config_file }}
+
+      - name: Run pre-commit (PR — diff only)
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+        id: pre-commit-pr
+        run: |
+          pip install pre-commit
+          pre-commit run --config "${{ inputs.config_file }}" --show-diff-on-failure --from-ref "origin/${{ github.base_ref }}" --to-ref HEAD 2>&1 | tee /tmp/pre-commit-output.txt || true
+          git diff > /tmp/pre-commit-fixes.diff
+          if [ -s /tmp/pre-commit-fixes.diff ]; then
+            echo "has_fixes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_fixes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Suggest fixes via reviewdog
+        if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && steps.pre-commit-pr.outputs.has_fixes == 'true'
+        uses: reviewdog/action-suggester@6ba408415017b58ee944777db851caa3d2d451b7 # v1
+        with:
+          tool_name: pre-commit
+          filter_mode: diff_context
+          fail_level: warning
+        continue-on-error: true
+
+      - name: Fail if pre-commit found issues
+        if: (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && steps.pre-commit-pr.outputs.has_fixes == 'true'
+        run: |
+          echo "::error::Pre-commit found formatting/linting issues. See reviewdog suggestions above."
+          exit 1
