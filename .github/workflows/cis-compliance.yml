@@ -20,7 +20,7 @@ on:
         default: '"ubuntu-latest"'
         description: 'Runner labels as JSON'
     secrets:
-      github_token:
+      scan_token:
         required: false
         description: 'GitHub token with repo read access (defaults to GITHUB_TOKEN)'
 
@@ -71,7 +71,7 @@ jobs:
       - name: Run chain-bench scan
         id: scan
         env:
-          SCAN_TOKEN: ${{ secrets.github_token || github.token }}
+          SCAN_TOKEN: ${{ secrets.scan_token || github.token }}
         run: |
           REPO_URL="https://github.com/${{ github.repository }}"
           BRANCH="${{ steps.branch.outputs.name }}"
