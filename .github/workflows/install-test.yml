@@ -1,0 +1,182 @@
+name: Install Test
+
+on:
+  workflow_call:
+    inputs:
+      cmake_version:
+        type: string
+        default: ''
+        description: 'CMake version to install (empty = use runner default)'
+      build_type:
+        type: string
+        default: 'Release'
+        description: 'CMAKE_BUILD_TYPE for the library build'
+      cmake_args:
+        type: string
+        default: ''
+        description: 'Extra CMake configure args for the library (e.g., -DBUILD_TESTING=OFF)'
+      install_prefix:
+        type: string
+        default: '/tmp/install'
+        description: 'CMAKE_INSTALL_PREFIX for the library'
+      consumer_dir:
+        type: string
+        default: ''
+        description: 'Path to a consumer CMake project (must have CMakeLists.txt with find_package). Empty = auto-generate a minimal consumer.'
+      package_name:
+        type: string
+        default: ''
+        description: 'Package name for find_package() in auto-generated consumer (required if consumer_dir is empty)'
+      target_name:
+        type: string
+        default: ''
+        description: 'CMake target to link (e.g., MyLib::MyLib). Defaults to package_name::package_name'
+      header_check:
+        type: string
+        default: ''
+        description: 'Header to #include in the consumer test (e.g., mylib/mylib.hpp). Empty = skip header check.'
+      docker_image:
+        type: string
+        default: ''
+        description: 'Docker image to run inside (empty = run natively on runner)'
+      source_mount:
+        type: string
+        default: '/workspace/src'
+        description: 'Mount point for source inside Docker container'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+
+permissions:
+  contents: read
+
+jobs:
+  install-test:
+    name: Install & find_package
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install CMake (if requested)
+        if: inputs.cmake_version != ''
+        uses: lukka/get-cmake@5e08e3fa04c4442e0a1805399eb7c3a2e5de8e2d # v3
+        with:
+          cmakeVersion: ${{ inputs.cmake_version }}
+
+      - name: Build & install library (native)
+        if: inputs.docker_image == ''
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_INSTALL_PREFIX=${{ inputs.install_prefix }} \
+            ${{ inputs.cmake_args }}
+          cmake --build build --parallel $(nproc)
+          cmake --install build
+
+      - name: Build & install library (Docker)
+        if: inputs.docker_image != ''
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -w "${{ inputs.source_mount }}" \
+            ${{ inputs.docker_image }} \
+            bash -c "
+              cmake -B build \
+                -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+                -DCMAKE_INSTALL_PREFIX=${{ inputs.install_prefix }} \
+                ${{ inputs.cmake_args }} && \
+              cmake --build build --parallel \$(nproc) && \
+              cmake --install build
+            "
+
+      - name: Generate consumer project
+        if: inputs.consumer_dir == ''
+        run: |
+          PACKAGE="${{ inputs.package_name }}"
+          TARGET="${{ inputs.target_name }}"
+          HEADER="${{ inputs.header_check }}"
+
+          if [ -z "$PACKAGE" ]; then
+            echo "::error::package_name is required when consumer_dir is empty"
+            exit 1
+          fi
+
+          if [ -z "$TARGET" ]; then
+            TARGET="${PACKAGE}::${PACKAGE}"
+          fi
+
+          mkdir -p /tmp/consumer
+          cat > /tmp/consumer/CMakeLists.txt <<CMAKE_EOF
+          cmake_minimum_required(VERSION 3.14)
+          project(install_test CXX)
+          set(CMAKE_CXX_STANDARD 17)
+          find_package(${PACKAGE} REQUIRED CONFIG)
+          add_executable(consumer_test main.cpp)
+          target_link_libraries(consumer_test PRIVATE ${TARGET})
+          CMAKE_EOF
+
+          if [ -n "$HEADER" ]; then
+            cat > /tmp/consumer/main.cpp <<CPP_EOF
+          #include <${HEADER}>
+          int main() { return 0; }
+          CPP_EOF
+          else
+            cat > /tmp/consumer/main.cpp <<CPP_EOF
+          int main() { return 0; }
+          CPP_EOF
+          fi
+
+          echo "consumer_path=/tmp/consumer" >> $GITHUB_OUTPUT
+        id: gen
+
+      - name: Set consumer path
+        id: consumer
+        run: |
+          if [ -n "${{ inputs.consumer_dir }}" ]; then
+            echo "path=${{ github.workspace }}/${{ inputs.consumer_dir }}" >> $GITHUB_OUTPUT
+          else
+            echo "path=/tmp/consumer" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build consumer project (native)
+        if: inputs.docker_image == ''
+        run: |
+          cmake -B /tmp/consumer-build \
+            -S "${{ steps.consumer.outputs.path }}" \
+            -DCMAKE_PREFIX_PATH=${{ inputs.install_prefix }} \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+          cmake --build /tmp/consumer-build --parallel $(nproc)
+          echo "Consumer project built successfully — find_package works"
+
+      - name: Build consumer project (Docker)
+        if: inputs.docker_image != ''
+        run: |
+          CONSUMER_PATH="${{ steps.consumer.outputs.path }}"
+          docker run --rm \
+            -v "${{ github.workspace }}:${{ inputs.source_mount }}" \
+            -v "${CONSUMER_PATH}:/tmp/consumer:ro" \
+            ${{ inputs.docker_image }} \
+            bash -c "
+              cmake -B /tmp/consumer-build \
+                -S /tmp/consumer \
+                -DCMAKE_PREFIX_PATH=${{ inputs.install_prefix }} \
+                -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} && \
+              cmake --build /tmp/consumer-build --parallel \$(nproc) && \
+              echo 'Consumer project built successfully — find_package works'
+            "
+
+      - name: Verify installed files
+        run: |
+          echo "Installed files under ${{ inputs.install_prefix }}:"
+          find "${{ inputs.install_prefix }}" -type f | head -50
+          echo ""
+          FILE_COUNT=$(find "${{ inputs.install_prefix }}" -type f | wc -l)
+          echo "Total installed files: ${FILE_COUNT}"
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "::error::No files installed — cmake --install may have failed silently"
+            exit 1
+          fi
