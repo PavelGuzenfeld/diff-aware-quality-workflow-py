@@ -493,6 +493,19 @@ jobs:
         run: |
           BASE_REF="${{ inputs.base_ref || github.base_ref || 'main' }}"
 
+          # Ensure jq is available (self-hosted runners may lack it)
+          if ! command -v jq &>/dev/null; then
+            if command -v apt-get &>/dev/null; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq jq
+            elif command -v apk &>/dev/null; then
+              sudo apk add --no-cache jq
+            elif command -v yum &>/dev/null; then
+              sudo yum install -y -q jq
+            else
+              echo "::warning::jq not found — gitleaks results will be summary only"
+            fi
+          fi
+
           CONFIG_ARG=""
           if [ -n "${{ inputs.gitleaks_config }}" ] && [ -f "${{ inputs.gitleaks_config }}" ]; then
             CONFIG_ARG="--config ${{ inputs.gitleaks_config }}"
@@ -504,8 +517,13 @@ jobs:
 
           VIOLATIONS=0
           if [ -f /tmp/gitleaks-report.json ] && [ -s /tmp/gitleaks-report.json ]; then
-            VIOLATIONS=$(jq 'length' /tmp/gitleaks-report.json)
-            jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::Gitleaks: \(.Description) [\(.RuleID)] — match: \(.Match | tostring | .[0:40])"' /tmp/gitleaks-report.json
+            if command -v jq &>/dev/null; then
+              VIOLATIONS=$(jq 'length' /tmp/gitleaks-report.json)
+              jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::Gitleaks: \(.Description) [\(.RuleID)] — match: \(.Match | tostring | .[0:40])"' /tmp/gitleaks-report.json
+            else
+              VIOLATIONS=$(python3 -c "import json; print(len(json.load(open('/tmp/gitleaks-report.json'))))" 2>/dev/null || echo "1")
+              echo "::warning::jq unavailable — see gitleaks report artifact for details"
+            fi
           fi
 
           echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
