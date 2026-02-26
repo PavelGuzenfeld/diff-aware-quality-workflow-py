@@ -25,8 +25,6 @@ jobs:
     with:
       org: PavelGuzenfeld
     secrets:
-      app_id: ${{ secrets.COMPLIANCE_APP_ID }}
-      app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 
   # Scan thebandofficial repos on every release
@@ -36,8 +34,6 @@ jobs:
     with:
       org: thebandofficial
     secrets:
-      app_id: ${{ secrets.COMPLIANCE_APP_ID }}
-      app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 
   # Manual dispatch for any org
@@ -48,6 +44,4 @@ jobs:
       org: ${{ inputs.org }}
       dry_run: ${{ inputs.dry_run }}
     secrets:
-      app_id: ${{ secrets.COMPLIANCE_APP_ID }}
-      app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
