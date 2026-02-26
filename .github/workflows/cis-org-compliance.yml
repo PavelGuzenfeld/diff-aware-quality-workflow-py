@@ -107,11 +107,14 @@ jobs:
               REPOS="${REPOS}${ITEM}"$'\n'
             done
           else
-            # Auto-discover: all non-archived, non-fork repos in the org
+            # Auto-discover: all non-archived, non-fork repos
+            # Try org endpoint first, fall back to user endpoint
             REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null \
-              || gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
               --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null)
+            if [ -z "$REPOS" ]; then
+              REPOS=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
+                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null)
+            fi
 
             # Apply max_repos limit
             REPOS=$(echo "$REPOS" | head -n "$MAX")
@@ -151,6 +154,37 @@ jobs:
               --access-token "$SCAN_TOKEN" \
               --output-file "/tmp/cis-results/${REPO_SHORT}.json" \
               2>&1 | tee "/tmp/cis-results/${REPO_SHORT}.log" || true
+
+            # Debug: check JSON output
+            if [ -f "/tmp/cis-results/${REPO_SHORT}.json" ] && [ -s "/tmp/cis-results/${REPO_SHORT}.json" ]; then
+              echo "  JSON output: $(wc -c < "/tmp/cis-results/${REPO_SHORT}.json") bytes"
+            else
+              echo "  JSON output: empty or missing — will parse from log"
+              # Generate JSON from log output using the Passed/Failed/Unknown markers
+              python3 -c "
+import re, json, sys
+
+results = []
+with open('/tmp/cis-results/${REPO_SHORT}.log') as f:
+    for line in f:
+        # Strip ANSI codes
+        clean = re.sub(r'\x1b\[[0-9;]*m', '', line).strip()
+        # Match: ID  Name  Result  Reason
+        m = re.match(r'^(\d+\.\d+\.\d+)\s+(.+?)\s+(Passed|Failed|Unknown)\s*(.*)', clean)
+        if m:
+            rid, name, result, reason = m.groups()
+            rval = {'Passed': 0, 'Failed': 1, 'Unknown': 2}[result]
+            results.append({'ID': rid, 'Name': name.strip(), 'Result': rval, 'Reason': reason.strip()})
+
+if results:
+    out = {'Results': [{'Results': results}]}
+    with open('/tmp/cis-results/${REPO_SHORT}.json', 'w') as f:
+        json.dump(out, f)
+    print(f'  Parsed {len(results)} controls from log')
+else:
+    print('  No controls found in log')
+" 2>/dev/null || echo "  Log parsing failed"
+            fi
 
           done < /tmp/repo-list.txt
 
