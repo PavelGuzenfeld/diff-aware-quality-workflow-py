@@ -29,12 +29,12 @@ jobs:
       app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 
-  # Scan thebenofial repos on every release
-  update-thebenofial:
+  # Scan thebandofficial repos on every release
+  update-thebandofficial:
     if: github.event_name == 'release'
     uses: ./.github/workflows/compliance-bot.yml
     with:
-      org: thebenofial
+      org: thebandofficial
     secrets:
       app_id: ${{ secrets.COMPLIANCE_APP_ID }}
       app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
