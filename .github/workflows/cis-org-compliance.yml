@@ -139,6 +139,7 @@ jobs:
         id: scan
         env:
           SCAN_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
         run: |
           mkdir -p /tmp/cis-results
 
@@ -163,8 +164,6 @@ jobs:
               2>&1 | tee "/tmp/cis-results/${REPO_SHORT}.log" || true
 
           done < /tmp/repo-list.txt
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
 
       - name: Generate org dashboard
         id: dashboard
