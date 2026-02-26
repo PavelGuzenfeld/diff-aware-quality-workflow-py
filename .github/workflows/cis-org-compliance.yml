@@ -242,7 +242,22 @@ jobs:
               echo ""
               echo "---"
               echo ""
-              echo "### ${REPO_SHORT}"
+            } >> /tmp/cis-dashboard.md
+
+            # Compute per-repo stats for the heading
+            R_PASSED=0; R_FAILED=0; R_UNKNOWN=0
+            if [ -f "$RESULT_FILE" ] && [ -s "$RESULT_FILE" ]; then
+              R_PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' "$RESULT_FILE" 2>/dev/null) || R_PASSED=0
+              R_FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' "$RESULT_FILE" 2>/dev/null) || R_FAILED=0
+              R_UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' "$RESULT_FILE" 2>/dev/null) || R_UNKNOWN=0
+            fi
+            R_TOTAL=$((R_PASSED + R_FAILED + R_UNKNOWN))
+            [ "$R_TOTAL" -eq 0 ] && R_TOTAL=35
+            R_PCT=0
+            [ "$R_TOTAL" -gt 0 ] && R_PCT=$((R_PASSED * 100 / R_TOTAL))
+
+            {
+              echo "### ${REPO_SHORT} — ${R_PASSED}/${R_TOTAL} passed (${R_PCT}%)"
               echo ""
             } >> /tmp/cis-dashboard.md
 
