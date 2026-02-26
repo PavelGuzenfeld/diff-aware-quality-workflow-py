@@ -1,0 +1,305 @@
+name: CIS Org Compliance
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        type: string
+        required: true
+        description: 'GitHub org or user to scan'
+      repos:
+        type: string
+        default: ''
+        description: 'Comma-separated repo names to scan (empty = all repos with .standard.yml)'
+      max_repos:
+        type: number
+        default: 20
+        description: 'Maximum number of repos to scan (controls runtime)'
+      min_score:
+        type: number
+        default: 0
+        description: 'Minimum passing score per repo (0-35). 0 = report only.'
+      chain_bench_version:
+        type: string
+        default: '0.1.10'
+        description: 'chain-bench version to install'
+      create_tracking_issue:
+        type: boolean
+        default: false
+        description: 'Create/update a tracking issue in the .github repo with results'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+    secrets:
+      app_id:
+        required: false
+        description: 'GitHub App ID with org-level read permissions'
+      app_private_key:
+        required: false
+        description: 'GitHub App private key (PEM)'
+      scan_token:
+        required: false
+        description: 'GitHub token with repo + read:org scope (fallback if no App)'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  cis-scan:
+    name: CIS SSC Org Scan
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Check for App credentials
+        id: app-check
+        env:
+          HAS_APP: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        run: echo "has_app=$HAS_APP" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub App token
+        if: steps.app-check.outputs.has_app == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ inputs.org }}
+
+      - name: Detect architecture
+        id: arch
+        run: |
+          case "$(uname -m)" in
+            x86_64)  echo "suffix=Linux-64bit" >> "$GITHUB_OUTPUT" ;;
+            aarch64) echo "suffix=Linux-ARM64" >> "$GITHUB_OUTPUT" ;;
+            *)       echo "suffix=Linux-64bit" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Install chain-bench
+        run: |
+          VERSION="${{ inputs.chain_bench_version }}"
+          SUFFIX="${{ steps.arch.outputs.suffix }}"
+          URL="https://github.com/aquasecurity/chain-bench/releases/download/v${VERSION}/chain-bench_${VERSION}_${SUFFIX}.tar.gz"
+          echo "Downloading chain-bench v${VERSION} for ${SUFFIX}..."
+          curl -sL "$URL" -o /tmp/chain-bench.tar.gz
+          tar -xzf /tmp/chain-bench.tar.gz -C /tmp chain-bench
+          chmod +x /tmp/chain-bench
+          /tmp/chain-bench --version || echo "chain-bench installed"
+
+      - name: Discover repos
+        id: discover
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
+        run: |
+          ORG="${{ inputs.org }}"
+          EXPLICIT="${{ inputs.repos }}"
+          MAX="${{ inputs.max_repos }}"
+
+          if [ -n "$EXPLICIT" ]; then
+            # Use explicit list
+            REPOS=""
+            IFS=',' read -ra ITEMS <<< "$EXPLICIT"
+            for ITEM in "${ITEMS[@]}"; do
+              ITEM=$(echo "$ITEM" | xargs)  # trim whitespace
+              # Add org prefix if missing
+              if [[ "$ITEM" != */* ]]; then
+                ITEM="${ORG}/${ITEM}"
+              fi
+              REPOS="${REPOS}${ITEM}"$'\n'
+            done
+          else
+            # Auto-discover: non-archived repos that have .standard.yml
+            ALL_REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
+              --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null \
+              || gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
+              --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null)
+
+            REPOS=""
+            COUNT=0
+            while IFS= read -r REPO; do
+              [ -z "$REPO" ] && continue
+              # Check if repo has .standard.yml
+              if gh api "repos/${REPO}/contents/.standard.yml" --jq '.name' >/dev/null 2>&1; then
+                REPOS="${REPOS}${REPO}"$'\n'
+                COUNT=$((COUNT + 1))
+                echo "  Found: ${REPO}"
+                [ "$COUNT" -ge "$MAX" ] && break
+              fi
+            done <<< "$ALL_REPOS"
+          fi
+
+          # Write repo list to file
+          echo -n "$REPOS" | grep -v '^$' > /tmp/repo-list.txt || true
+          TOTAL=$(wc -l < /tmp/repo-list.txt)
+          echo "count=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo ""
+          echo "Discovered ${TOTAL} repos to scan"
+
+      - name: Scan repos
+        id: scan
+        env:
+          SCAN_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
+        run: |
+          mkdir -p /tmp/cis-results
+
+          while IFS= read -r REPO; do
+            [ -z "$REPO" ] && continue
+            REPO_SHORT="${REPO##*/}"
+            REPO_URL="https://github.com/${REPO}"
+
+            # Get default branch
+            DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null || echo "main")
+
+            echo ""
+            echo "═══════════════════════════════════════"
+            echo "  Scanning: ${REPO} (branch: ${DEFAULT_BRANCH})"
+            echo "═══════════════════════════════════════"
+
+            /tmp/chain-bench scan \
+              --repository-url "$REPO_URL" \
+              --branch "$DEFAULT_BRANCH" \
+              --access-token "$SCAN_TOKEN" \
+              --output-file "/tmp/cis-results/${REPO_SHORT}.json" \
+              2>&1 | tee "/tmp/cis-results/${REPO_SHORT}.log" || true
+
+          done < /tmp/repo-list.txt
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
+
+      - name: Generate org dashboard
+        id: dashboard
+        if: always()
+        run: |
+          MIN_SCORE="${{ inputs.min_score }}"
+          ORG="${{ inputs.org }}"
+          WORST_SCORE=999
+          TOTAL_PASSED=0
+          TOTAL_CHECKS=0
+          REPO_COUNT=0
+          FAILING_REPOS=""
+
+          {
+            echo "## CIS Software Supply Chain v1.0 — ${ORG}"
+            echo ""
+            echo "| Repo | Passed | Failed | Unknown | Score | Status |"
+            echo "|:-----|:------:|:------:|:-------:|:-----:|:------:|"
+          } > /tmp/cis-dashboard.md
+
+          while IFS= read -r REPO; do
+            [ -z "$REPO" ] && continue
+            REPO_SHORT="${REPO##*/}"
+            RESULT_FILE="/tmp/cis-results/${REPO_SHORT}.json"
+
+            PASSED=0; FAILED=0; UNKNOWN=0
+
+            if [ -f "$RESULT_FILE" ] && [ -s "$RESULT_FILE" ]; then
+              PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' "$RESULT_FILE" 2>/dev/null) || PASSED=0
+              FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' "$RESULT_FILE" 2>/dev/null) || FAILED=0
+              UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' "$RESULT_FILE" 2>/dev/null) || UNKNOWN=0
+            else
+              LOG_FILE="/tmp/cis-results/${REPO_SHORT}.log"
+              if [ -f "$LOG_FILE" ]; then
+                PASSED=$(grep -c "PASSED" "$LOG_FILE" 2>/dev/null) || PASSED=0
+                FAILED=$(grep -c "FAILED" "$LOG_FILE" 2>/dev/null) || FAILED=0
+              fi
+            fi
+
+            TOTAL=$((PASSED + FAILED + UNKNOWN))
+            [ "$TOTAL" -eq 0 ] && TOTAL=35
+
+            PERCENT=0
+            [ "$TOTAL" -gt 0 ] && PERCENT=$((PASSED * 100 / TOTAL))
+
+            STATUS="—"
+            if [ "$MIN_SCORE" -gt 0 ]; then
+              if [ "$PASSED" -ge "$MIN_SCORE" ]; then
+                STATUS="PASS"
+              else
+                STATUS="FAIL"
+                FAILING_REPOS="${FAILING_REPOS}${REPO} (${PASSED}/${TOTAL})\n"
+              fi
+            fi
+
+            echo "| ${REPO_SHORT} | ${PASSED} | ${FAILED} | ${UNKNOWN} | ${PERCENT}% | ${STATUS} |" >> /tmp/cis-dashboard.md
+
+            TOTAL_PASSED=$((TOTAL_PASSED + PASSED))
+            TOTAL_CHECKS=$((TOTAL_CHECKS + TOTAL))
+            REPO_COUNT=$((REPO_COUNT + 1))
+            [ "$PASSED" -lt "$WORST_SCORE" ] && WORST_SCORE=$PASSED
+
+          done < /tmp/repo-list.txt
+
+          # Summary
+          AVG_PERCENT=0
+          [ "$TOTAL_CHECKS" -gt 0 ] && AVG_PERCENT=$((TOTAL_PASSED * 100 / TOTAL_CHECKS))
+
+          {
+            echo ""
+            echo "**Repos scanned:** ${REPO_COUNT} | **Org average:** ${AVG_PERCENT}%"
+            if [ "$MIN_SCORE" -gt 0 ]; then
+              echo "**Minimum threshold:** ${MIN_SCORE}/35"
+            fi
+            echo ""
+            echo "---"
+            echo "<sub>Scanned by <a href=\"https://github.com/aquasecurity/chain-bench\">chain-bench</a> v${{ inputs.chain_bench_version }} via <a href=\"https://github.com/PavelGuzenfeld/standard\">standard</a></sub>"
+          } >> /tmp/cis-dashboard.md
+
+          cat /tmp/cis-dashboard.md >> "$GITHUB_STEP_SUMMARY"
+
+          # Save outputs for threshold check
+          echo "repo_count=$REPO_COUNT" >> "$GITHUB_OUTPUT"
+          echo "avg_percent=$AVG_PERCENT" >> "$GITHUB_OUTPUT"
+          echo "worst_score=$WORST_SCORE" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$FAILING_REPOS" ]; then
+            echo "failing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "failing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cis-org-compliance
+          path: |
+            /tmp/cis-results/
+            /tmp/cis-dashboard.md
+            /tmp/repo-list.txt
+          retention-days: 90
+        continue-on-error: true
+
+      - name: Create/update tracking issue
+        if: always() && inputs.create_tracking_issue
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
+        run: |
+          ORG="${{ inputs.org }}"
+          ISSUE_TITLE="CIS Supply Chain Compliance Dashboard"
+          ISSUE_REPO="${ORG}/.github"
+
+          BODY=$(cat /tmp/cis-dashboard.md)
+          BODY="${BODY}"$'\n\n'"_Last updated: $(date -u '+%Y-%m-%d %H:%M UTC') | [Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
+
+          # Find existing issue
+          ISSUE_NUM=$(gh issue list --repo "$ISSUE_REPO" --search "\"${ISSUE_TITLE}\" in:title" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$ISSUE_NUM" ]; then
+            gh issue edit "$ISSUE_NUM" --repo "$ISSUE_REPO" --body "$BODY"
+            echo "Updated issue #${ISSUE_NUM}"
+          else
+            gh issue create --repo "$ISSUE_REPO" \
+              --title "$ISSUE_TITLE" \
+              --body "$BODY" \
+              --label "compliance" || true
+            echo "Created new tracking issue"
+          fi
+
+      - name: Check threshold
+        if: inputs.min_score > 0
+        run: |
+          if [ "${{ steps.dashboard.outputs.failing }}" = "true" ]; then
+            echo "::error::One or more repos scored below the minimum threshold of ${{ inputs.min_score }}/35"
+            exit 1
+          fi
+          echo "All repos meet the minimum threshold of ${{ inputs.min_score }}/35"

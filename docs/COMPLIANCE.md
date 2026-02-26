@@ -243,6 +243,149 @@ To also auto-update on schedule, set `auto_update: true` in the trigger workflow
 | Want to skip a repo | Don't add `.standard.yml` — unconfigured repos are listed but not updated |
 | Workflow fails at "Install standard-ci" | Reusable workflow needs `repository: PavelGuzenfeld/standard` in checkout step |
 
+## CIS Supply Chain Compliance
+
+### What It Is
+
+[CIS Software Supply Chain Security v1.0](https://www.cisecurity.org/benchmark/software-supply-chain-security)
+is a benchmark that evaluates GitHub repository and organization security posture:
+branch protection, signed commits, CI pipeline security, dependency management, etc.
+
+The scan uses [chain-bench](https://github.com/aquasecurity/chain-bench) by Aqua Security
+to check 35 controls across 5 categories.
+
+### Why Org-Level?
+
+Per-repo CIS scans score **0/35** because `GITHUB_TOKEN` in a `workflow_call` context
+lacks permissions to read org-level settings (2FA enforcement, team-based reviews, RBAC).
+Moving the scan to the org's `.github` repo with an App token solves this.
+
+### Architecture
+
+```
+PavelGuzenfeld/standard (source of truth)
+  └── .github/workflows/
+        └── cis-org-compliance.yml  ← reusable workflow (the engine)
+
+Each org's .github repo (trigger)
+  └── .github/workflows/
+        └── cis-compliance.yml  ← calls standard's reusable workflow
+```
+
+Every run: discover repos → scan each with chain-bench → aggregate dashboard.
+
+### Setup (One-Time per Org)
+
+#### 1. Create or configure a GitHub App
+
+The App needs these permissions:
+- **Organization: Members** (read) — 2FA enforcement checks
+- **Repository: Administration** (read) — branch protection rules
+- **Repository: Contents** (read) — repo contents
+- **Repository: Actions** (read) — workflow inspection
+- **Repository: Issues** (read & write) — tracking issue (optional)
+
+Install the App on the org and note the **App ID** and **Private Key**.
+
+#### 2. Set secrets in the org's `.github` repo
+
+```bash
+gh secret set CIS_APP_ID --repo my-org/.github --body "12345"
+gh secret set CIS_APP_PRIVATE_KEY --repo my-org/.github < app-private-key.pem
+```
+
+Or reuse existing App secrets if the same App has adequate permissions.
+
+#### 3. Add trigger workflow to the org's `.github` repo
+
+Create `.github/workflows/cis-compliance.yml`:
+
+```yaml
+name: CIS Compliance
+
+on:
+  schedule:
+    - cron: '0 10 * * 6'  # Saturday 10am UTC
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: 'Specific repos to scan (comma-separated, empty=all)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  cis:
+    uses: PavelGuzenfeld/standard/.github/workflows/cis-org-compliance.yml@main
+    with:
+      org: my-org
+      repos: ${{ inputs.repos || '' }}
+      create_tracking_issue: true
+    secrets:
+      app_id: ${{ secrets.CIS_APP_ID }}
+      app_private_key: ${{ secrets.CIS_APP_PRIVATE_KEY }}
+```
+
+### How It Works
+
+1. **Discovers repos** — lists all non-archived repos with `.standard.yml` (or uses explicit `repos` input)
+2. **Scans each repo** with chain-bench using the App token
+3. **Generates a dashboard** — markdown table with per-repo scores posted to workflow summary
+4. **Creates/updates a tracking issue** (optional) in the `.github` repo
+5. **Fails if below threshold** — when `min_score > 0`, exits non-zero if any repo scores below
+
+### Trigger Manually
+
+```bash
+# Scan all repos
+gh workflow run cis-compliance.yml --repo my-org/.github
+
+# Scan specific repos
+gh workflow run cis-compliance.yml --repo my-org/.github \
+  -f repos="repo-a,repo-b"
+```
+
+### Dashboard Output
+
+Each run produces a table like:
+
+| Repo | Passed | Failed | Unknown | Score | Status |
+|:-----|:------:|:------:|:-------:|:-----:|:------:|
+| rocx | 22 | 10 | 3 | 63% | PASS |
+| standard | 25 | 8 | 2 | 71% | PASS |
+
+Results are available in:
+- **Workflow run summary** (Actions tab of `.github` repo)
+- **Tracking issue** (if `create_tracking_issue: true`)
+- **Artifact download** (`cis-org-compliance` artifact)
+
+### Per-Repo CIS (Optional)
+
+The per-repo `cis-compliance.yml` workflow still exists for repos that want
+a detailed single-repo CIS report on PRs. Set `min_score: 0` (report-only)
+unless the repo has an App token with org-level read access.
+
+### Inputs Reference
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `org` | (required) | GitHub org or user to scan |
+| `repos` | `""` | Comma-separated repo names (empty = auto-discover) |
+| `max_repos` | `20` | Max repos to scan per run |
+| `min_score` | `0` | Minimum CIS score (0 = report only) |
+| `chain_bench_version` | `0.1.10` | chain-bench release version |
+| `create_tracking_issue` | `false` | Post results to a tracking issue |
+
+### Secrets Reference
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `app_id` | No | GitHub App ID with org-level read permissions |
+| `app_private_key` | No | GitHub App private key (PEM) |
+| `scan_token` | No | PAT with `repo` + `read:org` scope (fallback) |
+
 ## CLI Reference
 
 ```
