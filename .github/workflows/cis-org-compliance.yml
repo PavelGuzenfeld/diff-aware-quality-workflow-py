@@ -110,10 +110,10 @@ jobs:
             # Auto-discover: all non-archived, non-fork repos
             # Try org endpoint first, fall back to user endpoint
             REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null)
+              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null || true)
             if [ -z "$REPOS" ]; then
               REPOS=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null)
+                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null || true)
             fi
 
             # Apply max_repos limit
@@ -193,6 +193,7 @@ jobs:
         id: dashboard
         if: always()
         run: |
+          touch /tmp/repo-list.txt
           MIN_SCORE="${{ inputs.min_score }}"
           ORG="${{ inputs.org }}"
           WORST_SCORE=999
