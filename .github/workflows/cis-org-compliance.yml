@@ -167,13 +167,35 @@ jobs:
         run: |
           mkdir -p /tmp/cis-results
 
+          SCAN_COUNT=0
+
           while IFS= read -r REPO; do
             [ -z "$REPO" ] && continue
             REPO_SHORT="${REPO##*/}"
             REPO_URL="https://github.com/${REPO}"
 
-            # Get default branch
-            DEFAULT_BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null || echo "main")
+            # Check rate limit before each scan (chain-bench uses ~50-100 API calls per repo)
+            REMAINING=$(gh api rate_limit --jq '.rate.remaining' 2>/dev/null || echo "999")
+            if [ "$REMAINING" -lt 100 ]; then
+              RESET=$(gh api rate_limit --jq '.rate.reset' 2>/dev/null || echo "0")
+              NOW=$(date +%s)
+              WAIT=$(( RESET - NOW + 5 ))
+              if [ "$WAIT" -gt 0 ] && [ "$WAIT" -lt 3600 ]; then
+                echo ""
+                echo "  Rate limit low (${REMAINING} remaining). Waiting ${WAIT}s for reset..."
+                sleep "$WAIT"
+              else
+                echo ""
+                echo "  Rate limit exhausted (${REMAINING} remaining). Skipping remaining repos."
+                break
+              fi
+            fi
+
+            # Get default branch (guard against error JSON leaking into variable)
+            DEFAULT_BRANCH="main"
+            if BRANCH=$(gh api "repos/${REPO}" --jq '.default_branch' 2>/dev/null); then
+              [ -n "$BRANCH" ] && DEFAULT_BRANCH="$BRANCH"
+            fi
 
             echo ""
             echo "═══════════════════════════════════════"
@@ -196,7 +218,11 @@ jobs:
               python3 /tmp/parse-cis-log.py "/tmp/cis-results/${REPO_SHORT}.log" "/tmp/cis-results/${REPO_SHORT}.json" 2>/dev/null || echo "  Log parsing failed"
             fi
 
+            SCAN_COUNT=$((SCAN_COUNT + 1))
+
           done < /tmp/repo-list.txt
+          echo ""
+          echo "Scanned ${SCAN_COUNT} repos"
 
       - name: Generate org dashboard
         id: dashboard
