@@ -6,29 +6,40 @@ The compliance bot keeps consumer repos in sync with `standard` releases:
 
 1. **Scans** all repos in a GitHub org for `.standard.yml`
 2. **Detects drift** — which repos are pinned to an old SHA
-3. **Opens PRs** automatically to update SHA pins when a new `standard` release is published
+3. **Opens PRs** automatically to update SHA pins
 4. **Generates dashboards** showing org-wide compliance status
 
 ## Architecture
 
 ```
-New standard release (e.g. v0.18.1)
-       |
-  run-compliance-bot.yml triggers
-       |
-  ┌────┴──────────────────────────────────┐
-  │  1. pip install standard-ci           │
-  │  2. standard-ci scan --org ORG        │
+PavelGuzenfeld/standard (source of truth)
+  └── .github/workflows/
+        ├── compliance-bot.yml       ← reusable workflow (the engine)
+        └── compliance-dashboard.yml ← reusable workflow (the engine)
+
+Each org's .github repo (trigger workflows)
+  └── .github/workflows/
+        ├── compliance-bot.yml       ← calls standard's reusable workflow
+        └── compliance-dashboard.yml ← calls standard's reusable workflow
+```
+
+When a trigger workflow runs:
+
+```
+  ┌───────────────────────────────────────┐
+  │  1. Checkout PavelGuzenfeld/standard  │
+  │  2. pip install standard-ci           │
+  │  3. standard-ci scan --org ORG        │
   │     → finds repos with .standard.yml  │
   │     → checks SHA pins vs latest       │
-  │  3. standard-ci auto-update --org ORG │
+  │  4. standard-ci auto-update --org ORG │
   │     → clones drifted repos            │
   │     → updates SHA pins                │
   │     → opens PRs via gh CLI            │
   └───────────────────────────────────────┘
 ```
 
-## Setup (One-Time)
+## Setup (One-Time per Org)
 
 ### 1. Set the bot token
 
@@ -36,38 +47,72 @@ The bot needs a GitHub token with `repo` and `workflow` scopes to push branches
 and create PRs in consumer repos.
 
 ```bash
-# Use your gh CLI token (has repo + workflow scopes)
-gh auth token | gh secret set COMPLIANCE_BOT_TOKEN --repo PavelGuzenfeld/standard
+# Set the secret in the org's .github repo
+gh auth token | gh secret set COMPLIANCE_BOT_TOKEN --repo MY-ORG/.github
 ```
 
 Or create a fine-grained PAT at https://github.com/settings/tokens with:
-- **Repository access**: All repos in target orgs
+- **Repository access**: All repos in target org
 - **Permissions**: Contents (Read & Write), Pull Requests (Read & Write), Workflows (Read & Write)
 
-### 2. Trigger workflows are already configured
+### 2. Add trigger workflows to the org's `.github` repo
 
-These files live in `PavelGuzenfeld/standard`:
-
-| File | Trigger | What it does |
-|------|---------|-------------|
-| `.github/workflows/run-compliance-bot.yml` | On every release + manual | Scans orgs, opens update PRs |
-| `.github/workflows/run-compliance-dashboard.yml` | Weekly Monday 9am UTC + manual | Generates compliance report |
-
-Currently configured orgs: `PavelGuzenfeld`, `thebandofficial`
-
-#### Adding a new org
-
-Edit `run-compliance-bot.yml` and `run-compliance-dashboard.yml` to add a new job block:
+Create `.github/workflows/compliance-bot.yml`:
 
 ```yaml
-  update-my-org:
-    if: github.event_name == 'release'
-    uses: ./.github/workflows/compliance-bot.yml
+name: Compliance Bot
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'  # Monday 10am UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no PRs opened)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    uses: PavelGuzenfeld/standard/.github/workflows/compliance-bot.yml@main
     with:
-      org: my-org-name
+      org: MY-ORG
+      dry_run: ${{ inputs.dry_run || false }}
     secrets:
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 ```
+
+Create `.github/workflows/compliance-dashboard.yml`:
+
+```yaml
+name: Compliance Dashboard
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Monday 9am UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    uses: PavelGuzenfeld/standard/.github/workflows/compliance-dashboard.yml@main
+    with:
+      org: MY-ORG
+    secrets:
+      bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
+```
+
+### Currently configured orgs
+
+| Org | Trigger repo | Status |
+|-----|-------------|--------|
+| `PavelGuzenfeld` | `PavelGuzenfeld/.github` | Active |
+| `thebandofficial` | `thebandofficial/.github` | Active |
 
 ## Onboarding a Consumer Repo
 
@@ -131,9 +176,11 @@ workflows:
 
 **Option A: GitHub Actions → workflow run summary**
 
-1. Go to https://github.com/PavelGuzenfeld/standard/actions/workflows/run-compliance-dashboard.yml
-2. Click the latest run
-3. The dashboard is in the **Summary** tab (step summary)
+Go to the Actions tab of the org's `.github` repo and click the latest "Compliance Dashboard" run:
+- PavelGuzenfeld: https://github.com/PavelGuzenfeld/.github/actions/workflows/compliance-dashboard.yml
+- thebandofficial: https://github.com/thebandofficial/.github/actions/workflows/compliance-dashboard.yml
+
+The dashboard is in the **Summary** tab (step summary).
 
 **Option B: Download artifact**
 
@@ -150,47 +197,44 @@ standard-ci dashboard --org thebandofficial --format json
 
 ### How to trigger manually
 
+Each org's workflows are triggered from that org's `.github` repo, not from `standard`.
+
 #### Trigger the compliance bot (scan + open PRs)
 
 **From GitHub UI:**
 
-1. Go to https://github.com/PavelGuzenfeld/standard/actions/workflows/run-compliance-bot.yml
+1. Go to `https://github.com/MY-ORG/.github/actions/workflows/compliance-bot.yml`
 2. Click **"Run workflow"** (top right)
-3. Enter the org name (default: `PavelGuzenfeld`)
-4. Optionally check "Dry run" to preview without opening PRs
-5. Click **"Run workflow"**
+3. Optionally check "Dry run" to preview without opening PRs
+4. Click **"Run workflow"**
 
 **From CLI:**
 
 ```bash
-# Scan and open PRs for an org
-gh workflow run run-compliance-bot.yml \
-  --repo PavelGuzenfeld/standard \
-  -f org=thebandofficial \
-  -f dry_run=false
-
-# Dry run (just see what would happen)
-gh workflow run run-compliance-bot.yml \
-  --repo PavelGuzenfeld/standard \
-  -f org=thebandofficial \
+# Scan PavelGuzenfeld repos (dry run)
+gh workflow run compliance-bot.yml \
+  --repo PavelGuzenfeld/.github \
   -f dry_run=true
+
+# Scan thebandofficial repos (open PRs)
+gh workflow run compliance-bot.yml \
+  --repo thebandofficial/.github \
+  -f dry_run=false
 ```
 
 #### Trigger the dashboard
 
 **From GitHub UI:**
 
-1. Go to https://github.com/PavelGuzenfeld/standard/actions/workflows/run-compliance-dashboard.yml
+1. Go to `https://github.com/MY-ORG/.github/actions/workflows/compliance-dashboard.yml`
 2. Click **"Run workflow"**
-3. Enter the org name
-4. Click **"Run workflow"**
+3. Click **"Run workflow"**
 
 **From CLI:**
 
 ```bash
-gh workflow run run-compliance-dashboard.yml \
-  --repo PavelGuzenfeld/standard \
-  -f org=thebandofficial
+gh workflow run compliance-dashboard.yml --repo PavelGuzenfeld/.github
+gh workflow run compliance-dashboard.yml --repo thebandofficial/.github
 ```
 
 ### Scan without opening PRs (CLI only)
@@ -224,19 +268,20 @@ standard-ci auto-update --org thebandofficial
 
 | Event | Action |
 |-------|--------|
-| New `standard` release published | Bot scans `PavelGuzenfeld` + `thebandofficial`, opens PRs in drifted repos |
-| Every Monday 9am UTC | Dashboard generated for both orgs (visible in Actions summary) |
+| Every Monday 9am UTC | Dashboard generated per org (visible in that org's `.github` Actions summary) |
+| Every Monday 10am UTC | Bot scans each org, opens PRs in drifted repos |
 | PR opened by bot in consumer repo | Team reviews and merges the SHA pin update |
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| Bot can't push to consumer repo | Check `COMPLIANCE_BOT_TOKEN` has `repo` + `workflow` scopes |
+| Bot can't push to consumer repo | Check `COMPLIANCE_BOT_TOKEN` in the org's `.github` repo has `repo` + `workflow` scopes |
 | Bot doesn't detect a repo | Add `.standard.yml` to the repo root |
 | Dashboard shows "0 repos scanned" | Token may lack `read:org` scope for private orgs |
 | PR has merge conflicts | The bot creates a simple branch; resolve conflicts and merge manually |
 | Want to skip a repo | Don't add `.standard.yml` — unconfigured repos are listed but not updated |
+| Workflow fails at "Install standard-ci" | Reusable workflow needs `repository: PavelGuzenfeld/standard` in checkout step |
 
 ## CLI Reference
 
