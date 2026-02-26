@@ -98,19 +98,30 @@ git push
 
 ## Automatic Updates
 
-The compliance bot runs on every `standard` release and scans `thebandofficial`:
+Trigger workflows live in `thebandofficial/.github`:
 
+| Workflow | Schedule | Manual trigger |
+|----------|----------|----------------|
+| `compliance-dashboard.yml` | Monday 9am UTC | `gh workflow run compliance-dashboard.yml --repo thebandofficial/.github` |
+| `compliance-bot.yml` | Monday 10am UTC | `gh workflow run compliance-bot.yml --repo thebandofficial/.github -f dry_run=true` |
+
+These call the reusable workflows in `PavelGuzenfeld/standard` via cross-repo reference (`PavelGuzenfeld/standard/.github/workflows/...@main`).
+
+The bot:
 1. Finds repos with `.standard.yml`
-2. Checks if their SHA pin matches the latest release
+2. Checks if their SHA pin matches the latest `standard` release
 3. Opens a PR if they're behind (branch: `standard-ci/update-vX.Y.Z`)
 
 PRs are labeled `dependencies,standard-ci` for easy filtering.
 
+View dashboard results at:
+https://github.com/thebandofficial/.github/actions/workflows/compliance-dashboard.yml
+
 ## Token Requirements
 
-The `COMPLIANCE_BOT_TOKEN` in `PavelGuzenfeld/standard` needs access to
-`thebandofficial` repos. Current setup uses a PAT with `repo` + `workflow` scopes
-belonging to `PavelGuzenfeld` (who is a member of `thebandofficial`).
+The `COMPLIANCE_BOT_TOKEN` secret is set in `thebandofficial/.github`. It needs
+`repo` + `workflow` scopes to push branches and create PRs in thebandofficial repos.
 
-If PavelGuzenfeld loses access to the org, the token needs to be replaced with
-one from another org member, or a GitHub App should be installed.
+Current setup uses a PAT belonging to `PavelGuzenfeld` (who is a member of
+`thebandofficial`). If PavelGuzenfeld loses access to the org, the token needs
+to be replaced with one from another org member, or a GitHub App should be installed.
