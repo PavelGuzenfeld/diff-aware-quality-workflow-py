@@ -20,8 +20,6 @@ jobs:
     with:
       org: PavelGuzenfeld
     secrets:
-      app_id: ${{ secrets.COMPLIANCE_APP_ID }}
-      app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 
   dashboard-thebandofficial:
@@ -30,6 +28,4 @@ jobs:
     with:
       org: thebandofficial
     secrets:
-      app_id: ${{ secrets.COMPLIANCE_APP_ID }}
-      app_private_key: ${{ secrets.COMPLIANCE_APP_PRIVATE_KEY }}
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}

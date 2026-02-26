@@ -55,8 +55,9 @@ jobs:
 
       - name: Generate App token
         id: app-token
-        if: inputs.org != '' && secrets.app_id != ''
+        if: secrets.app_id != '' && secrets.app_private_key != ''
         uses: actions/create-github-app-token@v2
+        continue-on-error: true
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.app_private_key }}
@@ -64,7 +65,7 @@ jobs:
 
       - name: Generate dashboard
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token || github.token }}
         run: |
           standard-ci dashboard --org "${{ inputs.org }}" \
             --format "${{ inputs.format }}" \
