@@ -27,3 +27,6 @@ jobs:
     with:
       tag: ${{ github.event.release.tag_name }}
       enable_pyproject: true
+    secrets:
+      app_id: ${{ secrets.RELEASE_APP_ID }}
+      app_private_key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

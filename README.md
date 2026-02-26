@@ -1,6 +1,6 @@
 # Standard
 
-[![Release](https://img.shields.io/github/v/release/PavelGuzenfeld/standard?label=version&color=blue)](https://github.com/PavelGuzenfeld/standard/releases)
+[![Release](https://img.shields.io/github/v/release/PavelGuzenfeld/standard?label=version&color=blue&style=flat)](https://github.com/PavelGuzenfeld/standard/releases)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PavelGuzenfeld/standard/badge)](https://scorecard.dev/viewer/?uri=github.com/PavelGuzenfeld/standard)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12012/badge)](https://www.bestpractices.dev/projects/12012)
 
