@@ -1,29 +1,27 @@
-# Compliance Bot — Integration & Operations Guide
+# Compliance — Integration & Operations Guide
 
 ## What It Does
 
-The compliance bot keeps consumer repos in sync with `standard` releases:
+The compliance workflow keeps consumer repos in sync with `standard` releases:
 
 1. **Scans** all repos in a GitHub org for `.standard.yml`
 2. **Detects drift** — which repos are pinned to an old SHA
-3. **Opens PRs** automatically to update SHA pins
-4. **Generates dashboards** showing org-wide compliance status
+3. **Generates a dashboard** showing org-wide compliance status
+4. **Opens PRs** (optional) to update SHA pins in drifted repos
 
 ## Architecture
 
 ```
 PavelGuzenfeld/standard (source of truth)
   └── .github/workflows/
-        ├── compliance-bot.yml       ← reusable workflow (the engine)
-        └── compliance-dashboard.yml ← reusable workflow (the engine)
+        └── compliance.yml  ← reusable workflow (the engine)
 
-Each org's .github repo (trigger workflows)
+Each org's .github repo (trigger)
   └── .github/workflows/
-        ├── compliance-bot.yml       ← calls standard's reusable workflow
-        └── compliance-dashboard.yml ← calls standard's reusable workflow
+        └── compliance.yml  ← calls standard's reusable workflow
 ```
 
-When a trigger workflow runs:
+Every run: scan + dashboard. With `auto_update: true`: also opens PRs.
 
 ```
   ┌───────────────────────────────────────┐
@@ -32,7 +30,9 @@ When a trigger workflow runs:
   │  3. standard-ci scan --org ORG        │
   │     → finds repos with .standard.yml  │
   │     → checks SHA pins vs latest       │
-  │  4. standard-ci auto-update --org ORG │
+  │  4. Generate dashboard (always)       │
+  │  5. standard-ci auto-update --org ORG │
+  │     → only if auto_update is true     │
   │     → clones drifted repos            │
   │     → updates SHA pins                │
   │     → opens PRs via gh CLI            │
@@ -55,18 +55,22 @@ Or create a fine-grained PAT at https://github.com/settings/tokens with:
 - **Repository access**: All repos in target org
 - **Permissions**: Contents (Read & Write), Pull Requests (Read & Write), Workflows (Read & Write)
 
-### 2. Add trigger workflows to the org's `.github` repo
+### 2. Add a trigger workflow to the org's `.github` repo
 
-Create `.github/workflows/compliance-bot.yml`:
+Create `.github/workflows/compliance.yml`:
 
 ```yaml
-name: Compliance Bot
+name: Compliance
 
 on:
   schedule:
-    - cron: '0 10 * * 1'  # Monday 10am UTC
+    - cron: '0 9 * * 1'  # Monday 9am UTC
   workflow_dispatch:
     inputs:
+      auto_update:
+        description: 'Open PRs to update drifted repos'
+        type: boolean
+        default: false
       dry_run:
         description: 'Dry run (no PRs opened)'
         type: boolean
@@ -76,33 +80,12 @@ permissions:
   contents: read
 
 jobs:
-  update:
-    uses: PavelGuzenfeld/standard/.github/workflows/compliance-bot.yml@main
+  compliance:
+    uses: PavelGuzenfeld/standard/.github/workflows/compliance.yml@main
     with:
       org: MY-ORG
+      auto_update: ${{ inputs.auto_update || false }}
       dry_run: ${{ inputs.dry_run || false }}
-    secrets:
-      bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
-```
-
-Create `.github/workflows/compliance-dashboard.yml`:
-
-```yaml
-name: Compliance Dashboard
-
-on:
-  schedule:
-    - cron: '0 9 * * 1'  # Monday 9am UTC
-  workflow_dispatch: {}
-
-permissions:
-  contents: read
-
-jobs:
-  dashboard:
-    uses: PavelGuzenfeld/standard/.github/workflows/compliance-dashboard.yml@main
-    with:
-      org: MY-ORG
     secrets:
       bot_token: ${{ secrets.COMPLIANCE_BOT_TOKEN }}
 ```
@@ -176,15 +159,15 @@ workflows:
 
 **Option A: GitHub Actions → workflow run summary**
 
-Go to the Actions tab of the org's `.github` repo and click the latest "Compliance Dashboard" run:
-- PavelGuzenfeld: https://github.com/PavelGuzenfeld/.github/actions/workflows/compliance-dashboard.yml
-- thebandofficial: https://github.com/thebandofficial/.github/actions/workflows/compliance-dashboard.yml
+Go to the Actions tab of the org's `.github` repo and click the latest "Compliance" run:
+- PavelGuzenfeld: https://github.com/PavelGuzenfeld/.github/actions/workflows/compliance.yml
+- thebandofficial: https://github.com/thebandofficial/.github/actions/workflows/compliance.yml
 
 The dashboard is in the **Summary** tab (step summary).
 
 **Option B: Download artifact**
 
-Each dashboard run uploads a `compliance-dashboard` artifact (markdown file).
+Each run uploads a `compliance-dashboard` artifact (markdown file).
 
 **Option C: Run locally**
 
@@ -197,44 +180,29 @@ standard-ci dashboard --org thebandofficial --format json
 
 ### How to trigger manually
 
-Each org's workflows are triggered from that org's `.github` repo, not from `standard`.
-
-#### Trigger the compliance bot (scan + open PRs)
+Each org's workflow is triggered from that org's `.github` repo, not from `standard`.
 
 **From GitHub UI:**
 
-1. Go to `https://github.com/MY-ORG/.github/actions/workflows/compliance-bot.yml`
+1. Go to `https://github.com/MY-ORG/.github/actions/workflows/compliance.yml`
 2. Click **"Run workflow"** (top right)
-3. Optionally check "Dry run" to preview without opening PRs
-4. Click **"Run workflow"**
+3. Check "auto_update" to also open PRs in drifted repos
+4. Check "dry_run" to preview without opening PRs
+5. Click **"Run workflow"**
 
 **From CLI:**
 
 ```bash
-# Scan PavelGuzenfeld repos (dry run)
-gh workflow run compliance-bot.yml \
-  --repo PavelGuzenfeld/.github \
-  -f dry_run=true
+# Dashboard only (default)
+gh workflow run compliance.yml --repo PavelGuzenfeld/.github
 
-# Scan thebandofficial repos (open PRs)
-gh workflow run compliance-bot.yml \
-  --repo thebandofficial/.github \
-  -f dry_run=false
-```
+# Dashboard + open update PRs
+gh workflow run compliance.yml --repo thebandofficial/.github \
+  -f auto_update=true
 
-#### Trigger the dashboard
-
-**From GitHub UI:**
-
-1. Go to `https://github.com/MY-ORG/.github/actions/workflows/compliance-dashboard.yml`
-2. Click **"Run workflow"**
-3. Click **"Run workflow"**
-
-**From CLI:**
-
-```bash
-gh workflow run compliance-dashboard.yml --repo PavelGuzenfeld/.github
-gh workflow run compliance-dashboard.yml --repo thebandofficial/.github
+# Dashboard + dry run (preview PRs)
+gh workflow run compliance.yml --repo thebandofficial/.github \
+  -f auto_update=true -f dry_run=true
 ```
 
 ### Scan without opening PRs (CLI only)
@@ -268,9 +236,10 @@ standard-ci auto-update --org thebandofficial
 
 | Event | Action |
 |-------|--------|
-| Every Monday 9am UTC | Dashboard generated per org (visible in that org's `.github` Actions summary) |
-| Every Monday 10am UTC | Bot scans each org, opens PRs in drifted repos |
+| Every Monday 9am UTC | Compliance workflow runs per org — dashboard generated (visible in that org's `.github` Actions summary) |
 | PR opened by bot in consumer repo | Team reviews and merges the SHA pin update |
+
+To also auto-update on schedule, set `auto_update: true` in the trigger workflow's `with:` block.
 
 ## Troubleshooting
 

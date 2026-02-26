@@ -98,24 +98,31 @@ git push
 
 ## Automatic Updates
 
-Trigger workflows live in `thebandofficial/.github`:
+A single trigger workflow lives in `thebandofficial/.github`:
 
 | Workflow | Schedule | Manual trigger |
 |----------|----------|----------------|
-| `compliance-dashboard.yml` | Monday 9am UTC | `gh workflow run compliance-dashboard.yml --repo thebandofficial/.github` |
-| `compliance-bot.yml` | Monday 10am UTC | `gh workflow run compliance-bot.yml --repo thebandofficial/.github -f dry_run=true` |
+| `compliance.yml` | Monday 9am UTC | `gh workflow run compliance.yml --repo thebandofficial/.github` |
 
-These call the reusable workflows in `PavelGuzenfeld/standard` via cross-repo reference (`PavelGuzenfeld/standard/.github/workflows/...@main`).
+This calls `PavelGuzenfeld/standard/.github/workflows/compliance.yml@main`.
 
-The bot:
-1. Finds repos with `.standard.yml`
-2. Checks if their SHA pin matches the latest `standard` release
-3. Opens a PR if they're behind (branch: `standard-ci/update-vX.Y.Z`)
+Every run scans the org and generates a dashboard. To also open update PRs, trigger manually with `auto_update=true`:
+
+```bash
+# Dashboard only
+gh workflow run compliance.yml --repo thebandofficial/.github
+
+# Dashboard + open PRs
+gh workflow run compliance.yml --repo thebandofficial/.github -f auto_update=true
+
+# Dashboard + dry run
+gh workflow run compliance.yml --repo thebandofficial/.github -f auto_update=true -f dry_run=true
+```
 
 PRs are labeled `dependencies,standard-ci` for easy filtering.
 
 View dashboard results at:
-https://github.com/thebandofficial/.github/actions/workflows/compliance-dashboard.yml
+https://github.com/thebandofficial/.github/actions/workflows/compliance.yml
 
 ## Token Requirements
 
