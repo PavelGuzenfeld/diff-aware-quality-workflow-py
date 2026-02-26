@@ -23,6 +23,12 @@ on:
       scan_token:
         required: false
         description: 'GitHub token with repo read access (defaults to GITHUB_TOKEN)'
+      app_id:
+        required: false
+        description: 'GitHub App ID for generating installation token'
+      app_private_key:
+        required: false
+        description: 'GitHub App private key (PEM) for generating installation token'
 
 permissions:
   actions: read
@@ -68,10 +74,18 @@ jobs:
           fi
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+
       - name: Run chain-bench scan
         id: scan
         env:
-          SCAN_TOKEN: ${{ secrets.scan_token || github.token }}
+          SCAN_TOKEN: ${{ steps.app-token.outputs.token || secrets.scan_token || github.token }}
         run: |
           REPO_URL="https://github.com/${{ github.repository }}"
           BRANCH="${{ steps.branch.outputs.name }}"
