@@ -1,0 +1,90 @@
+name: 'Clang-Format Check'
+description: 'Run diff-aware clang-format check inside a Docker container'
+
+inputs:
+  docker_image:
+    description: 'Docker image with clang-format'
+    required: true
+  source_mount:
+    description: 'Where repo source is mounted inside the container'
+    default: '/workspace/src'
+  clang_format_config:
+    description: 'Path to .clang-format config'
+    default: ''
+  file_extensions:
+    description: 'Space-separated C++ file extensions'
+    default: 'cpp hpp h cc cxx'
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  exclude_file:
+    description: 'Path to file listing excluded paths'
+    default: ''
+
+outputs:
+  violations:
+    description: 'Number of files with formatting violations'
+    value: ${{ steps.format.outputs.violations }}
+
+runs:
+  using: composite
+  steps:
+    - id: files
+      uses: PavelGuzenfeld/standard/actions/diff-files@main
+      with:
+        file_extensions: ${{ inputs.file_extensions }}
+        base_ref: ${{ inputs.base_ref }}
+        exclude_file: ${{ inputs.exclude_file }}
+
+    - id: format
+      if: steps.files.outputs.count != '0'
+      shell: bash
+      run: |
+        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+        MOUNT="${{ inputs.source_mount }}"
+
+        # Start persistent container
+        docker run -d --name cf-container \
+          -v "${{ github.workspace }}:${MOUNT}" \
+          -w "${MOUNT}" \
+          "${{ inputs.docker_image }}" sleep infinity
+
+        # Ensure clang-format is available
+        docker exec cf-container bash -c "
+          if ! command -v clang-format &>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq clang-format 2>/dev/null || true
+          fi
+        "
+
+        FORMAT_ARGS="--dry-run --Werror"
+        if [ -n "${{ inputs.clang_format_config }}" ]; then
+          FORMAT_ARGS="$FORMAT_ARGS --style=file:${{ inputs.clang_format_config }}"
+        fi
+
+        VIOLATIONS=0
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          [ -f "$file" ] || continue
+          OUTPUT=$(docker exec cf-container clang-format $FORMAT_ARGS "$file" 2>&1 || true)
+          if [ -n "$OUTPUT" ]; then
+            echo "$OUTPUT" | grep -E '^.+:[0-9]+:[0-9]+:' | while IFS= read -r line; do
+              ann_file=$(echo "$line" | cut -d: -f1)
+              ann_line=$(echo "$line" | cut -d: -f2)
+              ann_col=$(echo "$line" | cut -d: -f3)
+              message=$(echo "$line" | cut -d: -f4-)
+              echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::clang-format:${message}"
+            done
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+        done < /tmp/changed_cpp_files.txt
+
+        # Cleanup
+        docker rm -f cf-container 2>/dev/null || true
+
+        echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+        echo "clang-format: $VIOLATIONS file(s) with violations"
+        [ "$VIOLATIONS" -gt 0 ] && exit 1 || true
+
+    - if: steps.files.outputs.count == '0'
+      shell: bash
+      run: echo "No changed C++ files — skipping clang-format"

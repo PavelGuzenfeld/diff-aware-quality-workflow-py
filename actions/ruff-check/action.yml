@@ -1,0 +1,51 @@
+name: 'Ruff Check'
+description: 'Run diff-aware Python linting with ruff via diff-quality'
+
+inputs:
+  python_version:
+    description: 'Python version to use'
+    default: '3.12'
+  source_dirs:
+    description: 'Space-separated source directories'
+    default: 'src'
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  fail_under:
+    description: 'Minimum diff-quality score (0-100)'
+    default: '100'
+
+outputs:
+  passed:
+    description: 'Whether the check passed'
+    value: ${{ steps.lint.outputs.passed }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - shell: bash
+      run: pip install ruff diff-cover
+
+    - id: lint
+      shell: bash
+      run: |
+        BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
+
+        # Run ruff on source dirs to generate output
+        ruff check ${{ inputs.source_dirs }} --output-format=pylint > /tmp/ruff_output.txt 2>&1 || true
+
+        # Run diff-quality
+        if diff-quality --violations=ruff.check \
+          --compare-branch="origin/${BASE}" \
+          --fail-under=${{ inputs.fail_under }}; then
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "ruff: diff-quality passed"
+        else
+          echo "passed=false" >> $GITHUB_OUTPUT
+          echo "ruff: diff-quality failed"
+          exit 1
+        fi

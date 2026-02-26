@@ -1,0 +1,63 @@
+name: 'Get Changed Files'
+description: 'Get diff-aware list of changed files filtered by extension and exclusion patterns'
+
+inputs:
+  file_extensions:
+    description: 'Space-separated file extensions to match (e.g. "cpp hpp h")'
+    required: true
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  exclude_file:
+    description: 'Path to file listing excluded paths (one per line, # comments)'
+    default: ''
+
+outputs:
+  files:
+    description: 'Newline-separated list of changed files'
+    value: ${{ steps.diff.outputs.files }}
+  count:
+    description: 'Number of changed files'
+    value: ${{ steps.diff.outputs.count }}
+
+runs:
+  using: composite
+  steps:
+    - id: diff
+      shell: bash
+      run: |
+        BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
+        EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
+
+        FILES=$(git diff --name-only --diff-filter=ACMR "origin/${BASE}" -- \
+          | grep -E "$EXT_PATTERN" || true)
+
+        if [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
+          PATTERNS=()
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%%#*}"; line="$(echo "$line" | xargs)"
+            [ -z "$line" ] && continue
+            PATTERNS+=("$line")
+          done < "${{ inputs.exclude_file }}"
+
+          FILTERED=""
+          while IFS= read -r fp; do
+            [ -z "$fp" ] && continue
+            excl=false
+            for p in "${PATTERNS[@]}"; do
+              [[ "$fp" == "$p"* ]] && excl=true && break
+            done
+            [ "$excl" = false ] && FILTERED="${FILTERED}${fp}"$'\n'
+          done <<< "$FILES"
+          FILES="$FILTERED"
+        fi
+
+        FILES=$(echo "$FILES" | sed '/^$/d')
+        COUNT=$(echo "$FILES" | grep -c . || echo 0)
+
+        echo "files<<EOF" >> $GITHUB_OUTPUT
+        echo "$FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+        echo "Found $COUNT changed file(s)"

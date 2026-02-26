@@ -1,0 +1,70 @@
+name: 'ShellCheck'
+description: 'Run diff-aware ShellCheck on changed shell scripts'
+
+inputs:
+  severity:
+    description: 'Minimum severity: error, warning, info, style'
+    default: 'warning'
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  exclude_file:
+    description: 'Path to file listing excluded paths'
+    default: ''
+
+outputs:
+  violations:
+    description: 'Number of files with violations'
+    value: ${{ steps.check.outputs.violations }}
+
+runs:
+  using: composite
+  steps:
+    - id: files
+      uses: PavelGuzenfeld/standard/actions/diff-files@main
+      with:
+        file_extensions: 'sh bash'
+        base_ref: ${{ inputs.base_ref }}
+        exclude_file: ${{ inputs.exclude_file }}
+
+    - shell: bash
+      run: |
+        if ! command -v shellcheck &>/dev/null; then
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+        fi
+
+    - id: check
+      if: steps.files.outputs.count != '0'
+      shell: bash
+      run: |
+        echo "${{ steps.files.outputs.files }}" > /tmp/changed_scripts.txt
+        VIOLATIONS=0
+
+        while IFS= read -r file; do
+          [ -z "$file" ] && continue
+          [ -f "$file" ] || continue
+
+          OUTPUT=$(shellcheck --severity="${{ inputs.severity }}" --format=gcc "$file" 2>&1 || true)
+          if [ -n "$OUTPUT" ]; then
+            echo "$OUTPUT" | while IFS= read -r line; do
+              ann_file=$(echo "$line" | cut -d: -f1)
+              ann_line=$(echo "$line" | cut -d: -f2)
+              ann_col=$(echo "$line" | cut -d: -f3)
+              severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+              message=$(echo "$line" | cut -d: -f5-)
+              case "$severity" in
+                error) echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+                *)     echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
+              esac
+            done
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+        done < /tmp/changed_scripts.txt
+
+        echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
+        echo "shellcheck: $VIOLATIONS file(s) with violations"
+        [ "$VIOLATIONS" -gt 0 ] && exit 1 || true
+
+    - if: steps.files.outputs.count == '0'
+      shell: bash
+      run: echo "No changed shell scripts — skipping ShellCheck"
