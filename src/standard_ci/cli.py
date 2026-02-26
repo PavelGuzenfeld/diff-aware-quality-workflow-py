@@ -239,6 +239,114 @@ def cmd_check(args):
         sys.exit(1)
 
 
+def cmd_scan(args):
+    """Scan an org for .standard.yml compliance."""
+    from standard_ci.scanner import scan_org
+
+    token = args.token or os.environ.get("GITHUB_TOKEN", "")
+    print(f"Scanning {args.org}...")
+
+    try:
+        results, latest_tag, latest_sha = scan_org(args.org, token)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.json:
+        from standard_ci.dashboard import generate_dashboard
+
+        print(generate_dashboard(results, latest_tag, latest_sha, args.org, fmt="json"))
+    else:
+        configured = [r for r in results if r["has_config"]]
+        current = [r for r in configured if r["up_to_date"]]
+        drifted = [r for r in configured if not r["up_to_date"]]
+        unconfigured = [r for r in results if not r["has_config"]]
+
+        print(f"\nLatest: {latest_tag} ({latest_sha[:12]})\n")
+        for r in sorted(results, key=lambda x: x["repo"]):
+            name = r["repo"].split("/")[-1]
+            if r["has_config"] and r["up_to_date"]:
+                print(f"  {name:<30} {r['current_tag']:<12} OK")
+            elif r["has_config"]:
+                print(f"  {name:<30} {r['current_tag']:<12} DRIFT -> {latest_tag}")
+            else:
+                print(f"  {name:<30} {'':12} NO CONFIG")
+
+        print(f"\n{len(results)} repos: {len(current)} current, "
+              f"{len(drifted)} drifted, {len(unconfigured)} unconfigured")
+
+    if args.exit_code:
+        drifted = [r for r in results if r["has_config"] and not r["up_to_date"]]
+        if drifted:
+            sys.exit(1)
+
+
+def cmd_dashboard(args):
+    """Generate an org-wide compliance dashboard."""
+    from standard_ci.dashboard import generate_dashboard
+    from standard_ci.scanner import scan_org
+
+    token = args.token or os.environ.get("GITHUB_TOKEN", "")
+
+    if args.scan_results:
+        import json
+
+        with open(args.scan_results) as f:
+            data = json.load(f)
+        results = data["repos"]
+        latest_tag = data["latest_tag"]
+        latest_sha = data["latest_sha"]
+    else:
+        print(f"Scanning {args.org}...", file=sys.stderr)
+        try:
+            results, latest_tag, latest_sha = scan_org(args.org, token)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    output = generate_dashboard(
+        results, latest_tag, latest_sha, args.org, fmt=args.format
+    )
+    print(output)
+
+
+def cmd_auto_update(args):
+    """Open update PRs in drifted consumer repos."""
+    from standard_ci.auto_update import auto_update_repos
+
+    token = args.token or os.environ.get("GITHUB_TOKEN", "")
+
+    if args.scan_results:
+        import json
+
+        with open(args.scan_results) as f:
+            data = json.load(f)
+        scan_results = data["repos"]
+        latest_tag = data["latest_tag"]
+        latest_sha = data["latest_sha"]
+    else:
+        from standard_ci.scanner import scan_org
+
+        print(f"Scanning {args.org}...", file=sys.stderr)
+        try:
+            scan_results, latest_tag, latest_sha = scan_org(args.org, token)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    messages = auto_update_repos(
+        scan_results,
+        latest_tag,
+        latest_sha,
+        pr_title_prefix=args.pr_title_prefix,
+        pr_labels=args.pr_labels,
+        dry_run=args.dry_run,
+        token=token,
+    )
+    for msg in messages:
+        print(msg)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="standard-ci",
@@ -295,6 +403,49 @@ def main(argv=None):
     p_check = sub.add_parser("check", help="Validate setup matches .standard.yml")
     p_check.add_argument("--output-dir", metavar="DIR", help="Project directory (default: .)")
 
+    # scan
+    p_scan = sub.add_parser("scan", help="Scan org repos for compliance")
+    p_scan.add_argument("--org", required=True, help="GitHub org or user to scan")
+    p_scan.add_argument("--token", help="GitHub token (default: GITHUB_TOKEN env)")
+    p_scan.add_argument("--json", action="store_true", help="Output as JSON")
+    p_scan.add_argument(
+        "--exit-code", action="store_true",
+        help="Exit non-zero if any repo is non-compliant",
+    )
+
+    # dashboard
+    p_dash = sub.add_parser("dashboard", help="Generate compliance dashboard")
+    p_dash.add_argument("--org", required=True, help="GitHub org or user")
+    p_dash.add_argument("--token", help="GitHub token (default: GITHUB_TOKEN env)")
+    p_dash.add_argument(
+        "--format", choices=["markdown", "json"], default="markdown",
+        help="Output format (default: markdown)",
+    )
+    p_dash.add_argument(
+        "--scan-results", metavar="FILE",
+        help="Use pre-computed scan results JSON instead of scanning",
+    )
+
+    # auto-update
+    p_auto = sub.add_parser(
+        "auto-update", help="Open update PRs in drifted consumer repos",
+    )
+    p_auto.add_argument("--org", required=True, help="GitHub org or user")
+    p_auto.add_argument("--token", help="GitHub token (default: GITHUB_TOKEN env)")
+    p_auto.add_argument("--dry-run", action="store_true", help="Show what would change")
+    p_auto.add_argument(
+        "--scan-results", metavar="FILE",
+        help="Use pre-computed scan results JSON instead of scanning",
+    )
+    p_auto.add_argument(
+        "--pr-title-prefix", default="chore(deps): ",
+        help="Prefix for auto-update PR titles",
+    )
+    p_auto.add_argument(
+        "--pr-labels", default="dependencies,standard-ci",
+        help="Comma-separated labels for auto-update PRs",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command is None:
@@ -306,5 +457,8 @@ def main(argv=None):
         "update": cmd_update,
         "check": cmd_check,
         "install-starters": cmd_install_starters,
+        "scan": cmd_scan,
+        "dashboard": cmd_dashboard,
+        "auto-update": cmd_auto_update,
     }
     commands[args.command](args)
