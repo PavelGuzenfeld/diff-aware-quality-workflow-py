@@ -46,7 +46,7 @@ Once `.standard.yml` exists in your repo, the compliance bot will:
 - You just review and merge
 
 The bot runs from your org's `.github` repo (e.g. `thebandofficial/.github`).
-See [COMPLIANCE-BOT.md](COMPLIANCE-BOT.md) for setup instructions if your org
+See [COMPLIANCE.md](COMPLIANCE.md) for setup instructions if your org
 doesn't have trigger workflows yet.
 
 To update manually:
