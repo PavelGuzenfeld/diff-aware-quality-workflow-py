@@ -192,6 +192,34 @@ def cmd_update(args):
     print(f"\nUpdated {updated} workflow(s): {old_tag} -> {new_tag}")
 
 
+def cmd_install_starters(args):
+    """Install starter workflow templates into an org's .github repo."""
+    from standard_ci.starters import install_starters
+
+    print(f"Resolving {'tag ' + args.pin if args.pin else 'latest tag'}...")
+    try:
+        sha, tag_name = resolve_tag_sha(args.pin)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"  {tag_name} -> {sha[:12]}")
+
+    try:
+        messages = install_starters(
+            org=args.org,
+            sha=sha,
+            tag=tag_name,
+            dry_run=args.dry_run,
+            create_repo=args.create_repo,
+        )
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for msg in messages:
+        print(msg)
+
+
 def cmd_check(args):
     """Validate workflows match .standard.yml."""
     project_dir = args.output_dir or "."
@@ -244,6 +272,25 @@ def main(argv=None):
     p_update.add_argument("--pin", metavar="TAG", help="Pin to specific tag (default: latest)")
     p_update.add_argument("--output-dir", metavar="DIR", help="Project directory (default: .)")
 
+    # install-starters
+    p_starters = sub.add_parser(
+        "install-starters",
+        help="Install starter workflow templates into an org's .github repo",
+    )
+    p_starters.add_argument(
+        "--org", required=True, help="GitHub org or user (e.g. MyOrg)"
+    )
+    p_starters.add_argument(
+        "--pin", metavar="TAG", help="Pin to specific tag (default: latest)"
+    )
+    p_starters.add_argument(
+        "--dry-run", action="store_true", help="Show what would change"
+    )
+    p_starters.add_argument(
+        "--create-repo", action="store_true",
+        help="Create the .github repo if it doesn't exist",
+    )
+
     # check
     p_check = sub.add_parser("check", help="Validate setup matches .standard.yml")
     p_check.add_argument("--output-dir", metavar="DIR", help="Project directory (default: .)")
@@ -254,5 +301,10 @@ def main(argv=None):
         parser.print_help()
         sys.exit(1)
 
-    commands = {"init": cmd_init, "update": cmd_update, "check": cmd_check}
+    commands = {
+        "init": cmd_init,
+        "update": cmd_update,
+        "check": cmd_check,
+        "install-starters": cmd_install_starters,
+    }
     commands[args.command](args)
