@@ -14,6 +14,24 @@ inputs:
   fail_under:
     description: 'Minimum diff-quality score (0-100)'
     default: '100'
+  ruff_version:
+    description: 'Ruff version to install (empty for latest)'
+    default: ''
+  diff_cover_version:
+    description: 'diff-cover version to install (empty for latest)'
+    default: ''
+  ruff_select:
+    description: 'Comma-separated ruff rule selectors (e.g. E,F,W,I)'
+    default: ''
+  ruff_ignore:
+    description: 'Comma-separated ruff rules to ignore'
+    default: ''
+  line_length:
+    description: 'Maximum line length for ruff'
+    default: ''
+  target_python:
+    description: 'Target Python version for ruff (e.g. py312)'
+    default: ''
 
 outputs:
   passed:
@@ -28,15 +46,38 @@ runs:
         python-version: ${{ inputs.python_version }}
 
     - shell: bash
-      run: pip install ruff diff-cover
+      run: |
+        RUFF_PKG="ruff"
+        if [ -n "${{ inputs.ruff_version }}" ]; then
+          RUFF_PKG="ruff==${{ inputs.ruff_version }}"
+        fi
+        DIFF_PKG="diff-cover"
+        if [ -n "${{ inputs.diff_cover_version }}" ]; then
+          DIFF_PKG="diff-cover==${{ inputs.diff_cover_version }}"
+        fi
+        pip install "$RUFF_PKG" "$DIFF_PKG"
 
     - id: lint
       shell: bash
       run: |
         BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
 
+        RUFF_ARGS=""
+        if [ -n "${{ inputs.ruff_select }}" ]; then
+          RUFF_ARGS="$RUFF_ARGS --select=${{ inputs.ruff_select }}"
+        fi
+        if [ -n "${{ inputs.ruff_ignore }}" ]; then
+          RUFF_ARGS="$RUFF_ARGS --ignore=${{ inputs.ruff_ignore }}"
+        fi
+        if [ -n "${{ inputs.line_length }}" ]; then
+          RUFF_ARGS="$RUFF_ARGS --line-length=${{ inputs.line_length }}"
+        fi
+        if [ -n "${{ inputs.target_python }}" ]; then
+          RUFF_ARGS="$RUFF_ARGS --target-version=${{ inputs.target_python }}"
+        fi
+
         # Run ruff on source dirs to generate output
-        ruff check ${{ inputs.source_dirs }} --output-format=pylint > /tmp/ruff_output.txt 2>&1 || true
+        ruff check ${{ inputs.source_dirs }} ${RUFF_ARGS} --output-format=pylint > "${{ runner.temp }}/ruff_output.txt" 2>&1 || true
 
         # Run diff-quality
         if diff-quality --violations=ruff.check \

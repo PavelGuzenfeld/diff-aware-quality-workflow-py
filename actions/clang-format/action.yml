@@ -20,6 +20,9 @@ inputs:
   exclude_file:
     description: 'Path to file listing excluded paths'
     default: ''
+  path:
+    description: 'Subdirectory to scope file detection to'
+    default: '.'
 
 outputs:
   violations:
@@ -35,22 +38,26 @@ runs:
         file_extensions: ${{ inputs.file_extensions }}
         base_ref: ${{ inputs.base_ref }}
         exclude_file: ${{ inputs.exclude_file }}
+        path: ${{ inputs.path }}
 
     - id: format
       if: steps.files.outputs.count != '0'
       shell: bash
+      env:
+        CHANGED_FILES: ${{ steps.files.outputs.files }}
       run: |
-        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+        echo "$CHANGED_FILES" > "${{ runner.temp }}/changed_cpp_files.txt"
         MOUNT="${{ inputs.source_mount }}"
+        CONTAINER_NAME="cf-${{ github.run_id }}-${{ github.run_attempt }}"
 
-        # Start persistent container
-        docker run -d --name cf-container \
+        # Start persistent container with unique name
+        docker run -d --name "${CONTAINER_NAME}" \
           -v "${{ github.workspace }}:${MOUNT}" \
           -w "${MOUNT}" \
           "${{ inputs.docker_image }}" sleep infinity
 
         # Ensure clang-format is available
-        docker exec cf-container bash -c "
+        docker exec "${CONTAINER_NAME}" bash -c "
           if ! command -v clang-format &>/dev/null; then
             apt-get update -qq && apt-get install -y -qq clang-format 2>/dev/null || true
           fi
@@ -65,7 +72,7 @@ runs:
         while IFS= read -r file; do
           [ -z "$file" ] && continue
           [ -f "$file" ] || continue
-          OUTPUT=$(docker exec cf-container clang-format $FORMAT_ARGS "$file" 2>&1 || true)
+          OUTPUT=$(docker exec "${CONTAINER_NAME}" clang-format $FORMAT_ARGS "$file" 2>&1 || true)
           if [ -n "$OUTPUT" ]; then
             echo "$OUTPUT" | grep -E '^.+:[0-9]+:[0-9]+:' | while IFS= read -r line; do
               ann_file=$(echo "$line" | cut -d: -f1)
@@ -76,10 +83,10 @@ runs:
             done
             VIOLATIONS=$((VIOLATIONS + 1))
           fi
-        done < /tmp/changed_cpp_files.txt
+        done < "${{ runner.temp }}/changed_cpp_files.txt"
 
         # Cleanup
-        docker rm -f cf-container 2>/dev/null || true
+        docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 
         echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
         echo "clang-format: $VIOLATIONS file(s) with violations"
