@@ -1,4 +1,4 @@
-name: Compliance Dashboard
+name: Compliance
 
 on:
   workflow_call:
@@ -7,10 +7,22 @@ on:
         type: string
         required: true
         description: 'GitHub org or user to scan'
-      format:
+      auto_update:
+        type: boolean
+        default: false
+        description: 'Open PRs to update drifted repos'
+      dry_run:
+        type: boolean
+        default: false
+        description: 'Show what would change without opening PRs (requires auto_update)'
+      pr_title_prefix:
         type: string
-        default: 'markdown'
-        description: 'Output format: markdown or json'
+        default: 'chore(deps): '
+        description: 'Prefix for auto-update PR titles'
+      pr_labels:
+        type: string
+        default: 'dependencies,standard-ci'
+        description: 'Comma-separated labels for auto-update PRs'
       post_to_gist:
         type: boolean
         default: false
@@ -26,7 +38,7 @@ on:
     secrets:
       bot_token:
         required: false
-        description: 'GitHub token with org read access'
+        description: 'GitHub token with org/repo access'
       app_id:
         required: false
         description: 'GitHub App ID for generating installation token'
@@ -38,8 +50,8 @@ permissions:
   contents: read
 
 jobs:
-  dashboard:
-    name: Generate Dashboard
+  compliance:
+    name: Scan & Report
     runs-on: ${{ fromJSON(inputs.runner) }}
     steps:
       - name: Checkout standard
@@ -71,15 +83,27 @@ jobs:
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ inputs.org }}
 
+      - name: Scan org for compliance
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token || github.token }}
+        run: |
+          standard-ci scan --org "${{ inputs.org }}" --json \
+            > "${{ runner.temp }}/scan-results.json"
+
       - name: Generate dashboard
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token || github.token }}
         run: |
           standard-ci dashboard --org "${{ inputs.org }}" \
-            --format "${{ inputs.format }}" \
+            --scan-results "${{ runner.temp }}/scan-results.json" \
             > "${{ runner.temp }}/dashboard.md"
           cat "${{ runner.temp }}/dashboard.md" >> $GITHUB_STEP_SUMMARY
-          echo "Dashboard written to step summary"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-dashboard
+          path: ${{ runner.temp }}/dashboard.md
 
       - name: Update Gist
         if: inputs.post_to_gist && inputs.gist_id != ''
@@ -88,10 +112,24 @@ jobs:
         run: |
           gh gist edit "${{ inputs.gist_id }}" \
             -f "compliance-dashboard.md" "${{ runner.temp }}/dashboard.md"
-          echo "Updated gist ${{ inputs.gist_id }}"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: compliance-dashboard
-          path: ${{ runner.temp }}/dashboard.md
+      - name: Open update PRs
+        if: inputs.auto_update && inputs.dry_run == false
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token }}
+        run: |
+          standard-ci auto-update \
+            --org "${{ inputs.org }}" \
+            --scan-results "${{ runner.temp }}/scan-results.json" \
+            --pr-title-prefix "${{ inputs.pr_title_prefix }}" \
+            --pr-labels "${{ inputs.pr_labels }}"
+
+      - name: Dry run report
+        if: inputs.auto_update && inputs.dry_run
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token }}
+        run: |
+          standard-ci auto-update \
+            --org "${{ inputs.org }}" \
+            --scan-results "${{ runner.temp }}/scan-results.json" \
+            --dry-run
