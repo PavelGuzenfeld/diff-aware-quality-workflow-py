@@ -311,3 +311,57 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | AGENTS.md generator (generate-agents-md.sh) | Done | - |
 | Binary hardening verification | Done | cpp-quality.yml |
 | Trend dashboard | Done | trend-dashboard.yml |
+| `standard-ci` CLI tool (v0.13.2) | Done | pip install |
+
+---
+
+## Packaging & Enforcement Roadmap
+
+### Phase 1: `standard-ci` CLI (v0.13.2) — Done
+
+Python CLI (`pip install`) that replaces `generate-workflow.sh` with a proper tool:
+
+```
+standard-ci init [--preset minimal|recommended|full] [--non-interactive] [--pin TAG]
+standard-ci update [--dry-run]
+standard-ci check
+```
+
+- **Zero dependencies** — pure Python, works on >= 3.8
+- **SHA pinning** — resolves latest git tag to full SHA, emits `@<sha> # v2.2.3.4` in workflow refs
+- **Presets** — `minimal` (clang-tidy + cppcheck + ruff), `recommended` (+formatting, naming, secrets), `full` (everything)
+- **Auto-detection** — scans for CMakeLists.txt, package.xml, pyproject.toml to pick workflows
+- **`.standard.yml` config** — records chosen preset, SHA, and per-workflow overrides for `update` and `check`
+- **4 workflows for MVP** — cpp-quality, python-quality, infra-lint, sast-python
+
+### Phase 2: Starter Workflows
+
+Publish [starter workflows](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows) so new repos get standard workflows from the "Actions" tab:
+
+- Requires `.github/workflow-templates/` in the `.github` org repo
+- One template per language combo (C++, Python, C++ + Python)
+- Lower friction than CLI for GitHub-native users
+
+### Phase 3: Composite Actions
+
+Extract reusable steps from monolithic workflow files into [composite actions](https://docs.github.com/en/actions/sharing-automations/creating-actions/creating-a-composite-action):
+
+- `standard/actions/clang-tidy` — single step with `docker_image` + `compile_commands_path`
+- `standard/actions/ruff-check` — single step with `source_dirs`
+- Enables mixing standard steps with custom jobs (more flexible than `uses: workflow`)
+
+### Phase 4: Compliance Bot
+
+GitHub App or Actions bot that:
+
+- Scans repos for `.standard.yml` and validates setup matches policy
+- Opens PRs to update SHA pins on new releases (like Dependabot for standard)
+- Posts org-wide compliance dashboard (which repos pass, which drift)
+
+### Phase 5: Gemini Code Assist Integration
+
+Leverage the `.gemini/` configuration pattern for AI-assisted enforcement:
+
+- `.gemini/settings.json` can reference standard's AGENTS.md for code review context
+- Gemini Code Assist applies coding conventions during PR review
+- Complements static analysis with AI-powered pattern detection
