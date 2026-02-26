@@ -57,7 +57,7 @@ jobs:
           curl -sL "$URL" -o /tmp/chain-bench.tar.gz
           tar -xzf /tmp/chain-bench.tar.gz -C /tmp chain-bench
           chmod +x /tmp/chain-bench
-          /tmp/chain-bench version || echo "chain-bench installed"
+          /tmp/chain-bench --version || echo "chain-bench installed"
 
       - name: Determine branch
         id: branch
@@ -77,7 +77,7 @@ jobs:
           BRANCH="${{ steps.branch.outputs.name }}"
 
           echo "Scanning ${REPO_URL} branch=${BRANCH}..."
-          /tmp/chain-bench \
+          /tmp/chain-bench scan \
             --repository-url "$REPO_URL" \
             --branch "$BRANCH" \
             --access-token "$SCAN_TOKEN" \
@@ -85,15 +85,15 @@ jobs:
             2>&1 | tee /tmp/cis-scan.log || true
 
           # Parse results
-          if [ -f /tmp/cis-results.json ]; then
-            PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
-            FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
-            UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' /tmp/cis-results.json 2>/dev/null || echo "0")
+          if [ -f /tmp/cis-results.json ] && [ -s /tmp/cis-results.json ]; then
+            PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' /tmp/cis-results.json 2>/dev/null) || PASSED=0
+            FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' /tmp/cis-results.json 2>/dev/null) || FAILED=0
+            UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' /tmp/cis-results.json 2>/dev/null) || UNKNOWN=0
           else
             # Fallback: parse from log output
-            PASSED=$(grep -c "PASSED" /tmp/cis-scan.log || echo "0")
-            FAILED=$(grep -c "FAILED" /tmp/cis-scan.log || echo "0")
-            UNKNOWN=$(grep -c "UNKNOWN" /tmp/cis-scan.log || echo "0")
+            PASSED=$(grep -c "PASSED" /tmp/cis-scan.log 2>/dev/null) || PASSED=0
+            FAILED=$(grep -c "FAILED" /tmp/cis-scan.log 2>/dev/null) || FAILED=0
+            UNKNOWN=$(grep -c "UNKNOWN" /tmp/cis-scan.log 2>/dev/null) || UNKNOWN=0
           fi
 
           TOTAL=$((PASSED + FAILED + UNKNOWN))
