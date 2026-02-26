@@ -1,0 +1,102 @@
+name: 'Clang-Tidy'
+description: 'Run diff-aware clang-tidy analysis inside a Docker container'
+
+inputs:
+  docker_image:
+    description: 'Docker image with clang-tidy and compile_commands.json'
+    required: true
+  compile_commands_path:
+    description: 'Path to directory containing compile_commands.json (inside container)'
+    default: 'build'
+  source_mount:
+    description: 'Where repo source is mounted inside the container'
+    default: '/workspace/src'
+  source_setup:
+    description: 'Shell command to source before running tools'
+    default: ''
+  clang_tidy_config:
+    description: 'Path to .clang-tidy config'
+    default: ''
+  clang_tidy_jobs:
+    description: 'Parallel clang-tidy jobs'
+    default: '4'
+  file_extensions:
+    description: 'Space-separated C++ file extensions'
+    default: 'cpp hpp h cc cxx'
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  exclude_file:
+    description: 'Path to file listing excluded paths'
+    default: ''
+
+outputs:
+  warnings:
+    description: 'Number of warnings found'
+    value: ${{ steps.tidy.outputs.warnings }}
+  errors:
+    description: 'Number of errors found'
+    value: ${{ steps.tidy.outputs.errors }}
+
+runs:
+  using: composite
+  steps:
+    - id: files
+      uses: PavelGuzenfeld/standard/actions/diff-files@main
+      with:
+        file_extensions: ${{ inputs.file_extensions }}
+        base_ref: ${{ inputs.base_ref }}
+        exclude_file: ${{ inputs.exclude_file }}
+
+    - id: tidy
+      if: steps.files.outputs.count != '0'
+      shell: bash
+      run: |
+        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+
+        SETUP_CMD=""
+        if [ -n "${{ inputs.source_setup }}" ]; then
+          SETUP_CMD="${{ inputs.source_setup }} && "
+        fi
+
+        CONFIG_ARG=""
+        if [ -n "${{ inputs.clang_tidy_config }}" ]; then
+          CONFIG_ARG="--config-file=${{ inputs.clang_tidy_config }}"
+        fi
+
+        JOBS="${{ inputs.clang_tidy_jobs }}"
+        MOUNT="${{ inputs.source_mount }}"
+
+        docker run --rm \
+          -v "${{ github.workspace }}:${MOUNT}" \
+          -w "${MOUNT}" \
+          "${{ inputs.docker_image }}" \
+          bash -c "${SETUP_CMD}cat changed_cpp_files.txt | xargs -P${JOBS} -I{} clang-tidy -p ${{ inputs.compile_commands_path }} ${CONFIG_ARG} {} 2>&1" \
+          > /tmp/clang_tidy_output.txt 2>&1 || true
+
+        # Copy changed files list into container mount
+        cp /tmp/changed_cpp_files.txt "${{ github.workspace }}/changed_cpp_files.txt"
+
+        # Parse findings
+        WARNS=$(grep -cE '^.+:[0-9]+:[0-9]+: warning:' /tmp/clang_tidy_output.txt || echo 0)
+        ERRS=$(grep -E '^.+:[0-9]+:[0-9]+: error:' /tmp/clang_tidy_output.txt | grep -cv 'clang-diagnostic-' || echo 0)
+
+        # Emit annotations (max 50)
+        grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' /tmp/clang_tidy_output.txt | head -50 | while IFS= read -r line; do
+          ann_file=$(echo "$line" | cut -d: -f1)
+          ann_line=$(echo "$line" | cut -d: -f2)
+          ann_col=$(echo "$line" | cut -d: -f3)
+          severity=$(echo "$line" | cut -d: -f4 | tr -d ' ')
+          message=$(echo "$line" | cut -d: -f5-)
+          echo "::${severity} file=${ann_file},line=${ann_line},col=${ann_col}::${message}"
+        done
+
+        echo "warnings=$WARNS" >> $GITHUB_OUTPUT
+        echo "errors=$ERRS" >> $GITHUB_OUTPUT
+
+        echo "clang-tidy: $WARNS warning(s), $ERRS error(s)"
+        [ "$ERRS" -gt 0 ] && exit 1 || true
+
+    - if: steps.files.outputs.count == '0'
+      shell: bash
+      run: echo "No changed C++ files — skipping clang-tidy"

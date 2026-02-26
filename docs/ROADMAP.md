@@ -313,6 +313,7 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | Trend dashboard | Done | trend-dashboard.yml |
 | `standard-ci` CLI tool (v0.13.2) | Done | pip install |
 | Starter workflow templates | Done | PavelGuzenfeld/.github |
+| Composite actions (7 actions) | Done | actions/ directory |
 
 ---
 
@@ -345,13 +346,21 @@ standard-ci check
 - All pinned to SHA, matched by `filePatterns` (CMakeLists.txt, pyproject.toml, etc.)
 - Appear in Actions tab → "New workflow" for repos in this account
 
-### Phase 3: Composite Actions
+### Phase 3: Composite Actions — Done
 
-Extract reusable steps from monolithic workflow files into [composite actions](https://docs.github.com/en/actions/sharing-automations/creating-actions/creating-a-composite-action):
+[Composite actions](https://docs.github.com/en/actions/sharing-automations/creating-actions/creating-a-composite-action) under `actions/` for granular step-level reuse:
 
-- `standard/actions/clang-tidy` — single step with `docker_image` + `compile_commands_path`
-- `standard/actions/ruff-check` — single step with `source_dirs`
-- Enables mixing standard steps with custom jobs (more flexible than `uses: workflow`)
+| Action | Purpose | Docker? |
+|--------|---------|---------|
+| `actions/diff-files` | Shared diff-aware changed file detection | No |
+| `actions/clang-tidy` | C++ static analysis (CERT + Core Guidelines) | Yes |
+| `actions/cppcheck` | C++ value-flow + CWE analysis | Yes |
+| `actions/clang-format` | C++ formatting check | Yes |
+| `actions/ruff-check` | Python linting via diff-quality | No |
+| `actions/shellcheck` | Shell script linting | No |
+| `actions/gitleaks` | Secrets detection | No |
+
+Usage: `uses: PavelGuzenfeld/standard/actions/clang-tidy@<sha>` as a step in any job.
 
 ### Phase 4: Compliance Bot
 

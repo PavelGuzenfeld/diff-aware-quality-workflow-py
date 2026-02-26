@@ -1,0 +1,61 @@
+name: 'Gitleaks'
+description: 'Run diff-aware Gitleaks secrets detection'
+
+inputs:
+  gitleaks_version:
+    description: 'Gitleaks version to install'
+    default: 'v8.21.2'
+  gitleaks_config:
+    description: 'Path to .gitleaks.toml config file'
+    default: ''
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+
+outputs:
+  secrets:
+    description: 'Number of secrets found'
+    value: ${{ steps.scan.outputs.secrets }}
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        VERSION="${{ inputs.gitleaks_version }}"
+        curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${VERSION}/gitleaks_${VERSION#v}_linux_x64.tar.gz" \
+          -o /tmp/gitleaks.tar.gz
+        tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+        chmod +x /tmp/gitleaks
+
+    - id: scan
+      shell: bash
+      run: |
+        BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
+
+        CONFIG_ARG=""
+        if [ -n "${{ inputs.gitleaks_config }}" ] && [ -f "${{ inputs.gitleaks_config }}" ]; then
+          CONFIG_ARG="--config ${{ inputs.gitleaks_config }}"
+        fi
+
+        /tmp/gitleaks detect --source=. \
+          --log-opts="origin/${BASE}..HEAD" \
+          --report-path=/tmp/gitleaks-report.json \
+          --report-format=json \
+          $CONFIG_ARG --exit-code=0 || true
+
+        SECRETS=0
+        if [ -f /tmp/gitleaks-report.json ] && [ -s /tmp/gitleaks-report.json ]; then
+          if command -v jq &>/dev/null; then
+            SECRETS=$(jq 'length' /tmp/gitleaks-report.json)
+            jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::Gitleaks: \(.Description) [\(.RuleID)]"' \
+              /tmp/gitleaks-report.json
+          else
+            SECRETS=$(python3 -c "import json; print(len(json.load(open('/tmp/gitleaks-report.json'))))" 2>/dev/null || echo "1")
+            echo "::warning::jq unavailable — see gitleaks report artifact for details"
+          fi
+        fi
+
+        echo "secrets=$SECRETS" >> $GITHUB_OUTPUT
+        echo "gitleaks: $SECRETS secret(s) found"
+        [ "$SECRETS" -gt 0 ] && exit 1 || true

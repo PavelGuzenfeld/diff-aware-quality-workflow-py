@@ -1,0 +1,107 @@
+name: 'Cppcheck'
+description: 'Run diff-aware cppcheck analysis inside a Docker container'
+
+inputs:
+  docker_image:
+    description: 'Docker image with cppcheck'
+    required: true
+  source_mount:
+    description: 'Where repo source is mounted inside the container'
+    default: '/workspace/src'
+  source_setup:
+    description: 'Shell command to source before running tools'
+    default: ''
+  cppcheck_std:
+    description: 'C++ standard for cppcheck'
+    default: 'c++23'
+  cppcheck_suppress:
+    description: 'Path to cppcheck suppressions file'
+    default: ''
+  cppcheck_includes:
+    description: 'Space-separated include directories'
+    default: ''
+  cppcheck_include_file:
+    description: 'Path to file containing include dirs (one per line)'
+    default: ''
+  file_extensions:
+    description: 'Space-separated C++ file extensions'
+    default: 'cpp hpp h cc cxx'
+  base_ref:
+    description: 'Base branch for diff comparison'
+    default: ''
+  exclude_file:
+    description: 'Path to file listing excluded paths'
+    default: ''
+
+outputs:
+  findings:
+    description: 'Number of findings'
+    value: ${{ steps.check.outputs.findings }}
+
+runs:
+  using: composite
+  steps:
+    - id: files
+      uses: PavelGuzenfeld/standard/actions/diff-files@main
+      with:
+        file_extensions: ${{ inputs.file_extensions }}
+        base_ref: ${{ inputs.base_ref }}
+        exclude_file: ${{ inputs.exclude_file }}
+
+    - id: check
+      if: steps.files.outputs.count != '0'
+      shell: bash
+      run: |
+        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+
+        SETUP_CMD=""
+        if [ -n "${{ inputs.source_setup }}" ]; then
+          SETUP_CMD="${{ inputs.source_setup }} && "
+        fi
+
+        ARGS="--enable=warning,style,performance,portability --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr --error-exitcode=0"
+
+        if [ -n "${{ inputs.cppcheck_suppress }}" ] && [ -f "${{ inputs.cppcheck_suppress }}" ]; then
+          ARGS="$ARGS --suppressions-list=${{ inputs.cppcheck_suppress }}"
+        fi
+
+        INCLUDE_ARGS=""
+        for dir in ${{ inputs.cppcheck_includes }}; do
+          INCLUDE_ARGS="$INCLUDE_ARGS -I $dir"
+        done
+        if [ -n "${{ inputs.cppcheck_include_file }}" ] && [ -f "${{ inputs.cppcheck_include_file }}" ]; then
+          while IFS= read -r dir; do
+            dir=$(echo "$dir" | xargs)
+            [[ "$dir" == \#* ]] && continue
+            [ -z "$dir" ] && continue
+            INCLUDE_ARGS="$INCLUDE_ARGS -I $dir"
+          done < "${{ inputs.cppcheck_include_file }}"
+        fi
+
+        FILES=$(cat /tmp/changed_cpp_files.txt | tr '\n' ' ')
+        MOUNT="${{ inputs.source_mount }}"
+
+        docker run --rm \
+          -v "${{ github.workspace }}:${MOUNT}" \
+          -w "${MOUNT}" \
+          "${{ inputs.docker_image }}" \
+          bash -c "${SETUP_CMD}cppcheck ${ARGS} ${INCLUDE_ARGS} ${FILES}" \
+          > /tmp/cppcheck_output.txt 2>&1 || true
+
+        FINDINGS=$(grep -cE '^.+:[0-9]+:.*(error|warning|style|performance|portability):' /tmp/cppcheck_output.txt || echo 0)
+
+        # Emit annotations (max 50)
+        grep -E '^.+:[0-9]+:.*(error|warning|style|performance|portability):' /tmp/cppcheck_output.txt | head -50 | while IFS= read -r line; do
+          ann_file=$(echo "$line" | cut -d: -f1)
+          ann_line=$(echo "$line" | cut -d: -f2)
+          message=$(echo "$line" | cut -d: -f3-)
+          echo "::warning file=${ann_file},line=${ann_line}::cppcheck:${message}"
+        done
+
+        echo "findings=$FINDINGS" >> $GITHUB_OUTPUT
+        echo "cppcheck: $FINDINGS finding(s)"
+        [ "$FINDINGS" -gt 0 ] && exit 1 || true
+
+    - if: steps.files.outputs.count == '0'
+      shell: bash
+      run: echo "No changed C++ files — skipping cppcheck"
