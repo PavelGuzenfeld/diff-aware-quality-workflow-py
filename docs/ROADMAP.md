@@ -312,6 +312,7 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | Binary hardening verification | Done | cpp-quality.yml |
 | Trend dashboard | Done | trend-dashboard.yml |
 | `standard-ci` CLI tool (v0.13.2) | Done | pip install |
+| Starter workflow templates | Done | PavelGuzenfeld/.github |
 
 ---
 
@@ -334,13 +335,15 @@ standard-ci check
 - **`.standard.yml` config** — records chosen preset, SHA, and per-workflow overrides for `update` and `check`
 - **4 workflows for MVP** — cpp-quality, python-quality, infra-lint, sast-python
 
-### Phase 2: Starter Workflows
+### Phase 2: Starter Workflows — Done
 
-Publish [starter workflows](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows) so new repos get standard workflows from the "Actions" tab:
+[Starter workflows](https://docs.github.com/en/actions/using-workflows/creating-starter-workflows) in [`PavelGuzenfeld/.github`](https://github.com/PavelGuzenfeld/.github) repo:
 
-- Requires `.github/workflow-templates/` in the `.github` org repo
-- One template per language combo (C++, Python, C++ + Python)
-- Lower friction than CLI for GitHub-native users
+- **Standard C++ Quality** — clang-tidy, cppcheck, clang-format, flawfinder + infra-lint
+- **Standard Python Quality** — ruff, pytest, Semgrep, pip-audit + infra-lint
+- **Standard Full Quality** — C++ + Python combined
+- All pinned to SHA, matched by `filePatterns` (CMakeLists.txt, pyproject.toml, etc.)
+- Appear in Actions tab → "New workflow" for repos in this account
 
 ### Phase 3: Composite Actions
 
