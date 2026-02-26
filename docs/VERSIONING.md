@@ -34,7 +34,7 @@ For git tags (with `v` prefix):
 ^v[0-9]+(\.[0-9]+){2,3}(-[a-z0-9]+(-[a-z0-9]+)*)?$
 ```
 
-Valid: `0.0.1`, `0.0.0.1`, `1.2.3-rc-1`, `1.2.0-rocx-1234`, `0.0.3-gps-denied-nav`
+Valid: `0.0.1`, `0.0.0.1`, `1.2.3-rc-1`, `1.2.0-proj-1234`, `0.0.3-gps-denied-nav`
 Invalid: `1.0`, `1.0.0-RC1`, `1.0.0-Beta.1`, `1.0.0_feature`
 
 | Segment | Meaning | When to bump |
@@ -55,9 +55,9 @@ Two valid suffix types:
 
 **Feature or ticket annotation** (`-name`):
 ```
-1.2.0-rocx-1234
+1.2.0-proj-1234
 0.0.3-gps-denied-nav
-1.0.0-rc-1-rocx-567
+1.0.0-rc-1-proj-567
 ```
 
 No `alpha`, `beta`, or other pre-release conventions. Code is either released, an rc, or annotated with a feature/ticket.
