@@ -120,24 +120,30 @@ jobs:
             done
           else
             # Auto-discover: all non-archived, non-fork repos
-            # Try org endpoint first, fall back to user endpoint
+            # Fetch full_name and pushed_at, then filter by activity in shell
             REPOS=""
-            JQ_FILTER='.[] | select(.archived == false and .fork == false)'
-            if [ -n "$CUTOFF" ]; then
-              JQ_FILTER="${JQ_FILTER} | select(.pushed_at > \"${CUTOFF}\")"
-            fi
-            JQ_FILTER="${JQ_FILTER} | .full_name"
+            BASE_JQ='.[] | select(.archived == false and .fork == false) | [.full_name, .pushed_at] | @tsv'
 
+            RAW=""
             if CANDIDATE=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq "$JQ_FILTER" 2>/dev/null); then
-              REPOS="$CANDIDATE"
+              --jq "$BASE_JQ" 2>/dev/null); then
+              RAW="$CANDIDATE"
             fi
-            if [ -z "$REPOS" ]; then
+            if [ -z "$RAW" ]; then
               if CANDIDATE=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq "$JQ_FILTER" 2>/dev/null); then
-                REPOS="$CANDIDATE"
+                --jq "$BASE_JQ" 2>/dev/null); then
+                RAW="$CANDIDATE"
               fi
             fi
+
+            # Filter by activity cutoff (if set)
+            while IFS=$'\t' read -r NAME PUSHED; do
+              [ -z "$NAME" ] && continue
+              if [ -n "$CUTOFF" ] && [ "$PUSHED" \< "$CUTOFF" ]; then
+                continue
+              fi
+              REPOS="${REPOS}${NAME}"$'\n'
+            done <<< "$RAW"
 
             # Apply max_repos limit
             REPOS=$(echo "$REPOS" | head -n "$MAX")
