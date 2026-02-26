@@ -68,47 +68,57 @@ def write_config(path, data):
         f.write("\n".join(lines))
 
 
-def read_config(path):
-    """Read a flat or one-level-nested YAML file into a dict."""
-    if not os.path.exists(path):
-        return {}
+def _parse_lines(lines):
+    """Parse YAML lines into a dict. Shared by read_config and read_config_string."""
     data = {}
     current_key = None
     current_is_list = False
-    with open(path) as f:
-        for line in f:
-            stripped = line.rstrip("\n")
-            # Skip comments and blank lines
-            if not stripped or stripped.lstrip().startswith("#"):
-                continue
-            indent = len(stripped) - len(stripped.lstrip())
-            content = stripped.strip()
-            if indent >= 2 and current_key is not None:
-                # Nested value
-                if content.startswith("- "):
-                    if not current_is_list:
-                        data[current_key] = []
-                        current_is_list = True
-                    data[current_key].append(
-                        _parse_yaml_scalar(content[2:])
-                    )
-                elif ":" in content:
-                    k, _, v = content.partition(":")
-                    k = k.strip()
-                    v = v.strip()
-                    if not isinstance(data.get(current_key), dict):
-                        data[current_key] = {}
-                    data[current_key][k] = _parse_yaml_scalar(v)
+    for raw_line in lines:
+        stripped = raw_line.rstrip("\n")
+        # Skip comments and blank lines
+        if not stripped or stripped.lstrip().startswith("#"):
+            continue
+        indent = len(stripped) - len(stripped.lstrip())
+        content = stripped.strip()
+        if indent >= 2 and current_key is not None:
+            # Nested value
+            if content.startswith("- "):
+                if not current_is_list:
+                    data[current_key] = []
+                    current_is_list = True
+                data[current_key].append(
+                    _parse_yaml_scalar(content[2:])
+                )
             elif ":" in content:
                 k, _, v = content.partition(":")
                 k = k.strip()
                 v = v.strip()
-                if v:
-                    data[k] = _parse_yaml_scalar(v)
-                    current_key = None
-                    current_is_list = False
-                else:
-                    current_key = k
-                    current_is_list = False
+                if not isinstance(data.get(current_key), dict):
                     data[current_key] = {}
+                data[current_key][k] = _parse_yaml_scalar(v)
+        elif ":" in content:
+            k, _, v = content.partition(":")
+            k = k.strip()
+            v = v.strip()
+            if v:
+                data[k] = _parse_yaml_scalar(v)
+                current_key = None
+                current_is_list = False
+            else:
+                current_key = k
+                current_is_list = False
+                data[current_key] = {}
     return data
+
+
+def read_config(path):
+    """Read a flat or one-level-nested YAML file into a dict."""
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return _parse_lines(f)
+
+
+def read_config_string(text):
+    """Parse a .standard.yml string into a dict."""
+    return _parse_lines(text.splitlines(keepends=True))

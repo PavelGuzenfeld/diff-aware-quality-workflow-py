@@ -362,13 +362,17 @@ standard-ci check
 
 Usage: `uses: PavelGuzenfeld/standard/actions/clang-tidy@<sha>` as a step in any job.
 
-### Phase 4: Compliance Bot
+### Phase 4: Compliance Bot — Done
 
-GitHub App or Actions bot that:
+Reusable workflows + CLI subcommands that replace a hosted GitHub App:
 
-- Scans repos for `.standard.yml` and validates setup matches policy
-- Opens PRs to update SHA pins on new releases (like Dependabot for standard)
-- Posts org-wide compliance dashboard (which repos pass, which drift)
+- **`standard-ci scan --org ORG`** — discovers repos with `.standard.yml`, validates SHA pins against latest release
+- **`standard-ci auto-update --org ORG`** — clones drifted repos, updates SHA pins, opens PRs (like Dependabot for standard)
+- **`standard-ci dashboard --org ORG`** — generates markdown or JSON compliance report
+- **`compliance-bot.yml`** — reusable workflow: scan + open update PRs on new releases
+- **`compliance-dashboard.yml`** — reusable workflow: scheduled dashboard with gist/artifact output
+- Supports GitHub App token or PAT for cross-repo access
+- All logic in pure Python CLI (zero dependencies), testable locally
 
 ### Phase 5: Gemini Code Assist Integration
 

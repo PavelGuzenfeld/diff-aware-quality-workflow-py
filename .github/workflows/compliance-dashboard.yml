@@ -1,0 +1,88 @@
+name: Compliance Dashboard
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        type: string
+        required: true
+        description: 'GitHub org or user to scan'
+      format:
+        type: string
+        default: 'markdown'
+        description: 'Output format: markdown or json'
+      post_to_gist:
+        type: boolean
+        default: false
+        description: 'Update a pinned gist with dashboard content'
+      gist_id:
+        type: string
+        default: ''
+        description: 'Gist ID to update (required if post_to_gist is true)'
+      runner:
+        type: string
+        default: '"ubuntu-latest"'
+        description: 'Runner labels as JSON'
+    secrets:
+      bot_token:
+        required: false
+        description: 'GitHub token with org read access'
+      app_id:
+        required: false
+        description: 'GitHub App ID for generating installation token'
+      app_private_key:
+        required: false
+        description: 'GitHub App private key (PEM)'
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard:
+    name: Generate Dashboard
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    steps:
+      - name: Checkout standard
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install standard-ci
+        run: pip install .
+
+      - name: Generate App token
+        id: app-token
+        if: inputs.org != '' && secrets.app_id != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ inputs.org }}
+
+      - name: Generate dashboard
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token }}
+        run: |
+          standard-ci dashboard --org "${{ inputs.org }}" \
+            --format "${{ inputs.format }}" \
+            > "${{ runner.temp }}/dashboard.md"
+          cat "${{ runner.temp }}/dashboard.md" >> $GITHUB_STEP_SUMMARY
+          echo "Dashboard written to step summary"
+
+      - name: Update Gist
+        if: inputs.post_to_gist && inputs.gist_id != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token }}
+        run: |
+          gh gist edit "${{ inputs.gist_id }}" \
+            -f "compliance-dashboard.md" "${{ runner.temp }}/dashboard.md"
+          echo "Updated gist ${{ inputs.gist_id }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-dashboard
+          path: ${{ runner.temp }}/dashboard.md
