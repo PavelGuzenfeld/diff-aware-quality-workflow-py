@@ -109,11 +109,18 @@ jobs:
           else
             # Auto-discover: all non-archived, non-fork repos
             # Try org endpoint first, fall back to user endpoint
-            REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null || true)
+            # Note: gh api outputs error JSON to stdout on 404, so we validate
+            # that results look like "owner/repo" names before accepting them
+            REPOS=""
+            if CANDIDATE=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
+              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+              REPOS="$CANDIDATE"
+            fi
             if [ -z "$REPOS" ]; then
-              REPOS=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null || true)
+              if CANDIDATE=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
+                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+                REPOS="$CANDIDATE"
+              fi
             fi
 
             # Apply max_repos limit
