@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "standard"
 version = "0.13.2"
@@ -10,13 +14,19 @@ authors = [
 ]
 dependencies = []
 
+[project.scripts]
+standard-ci = "standard_ci.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
-pythonpath = ["."]
+pythonpath = [".", "src"]
 
 [tool.coverage.run]
 source = ["src"]
