@@ -14,6 +14,9 @@ inputs:
   cppcheck_std:
     description: 'C++ standard for cppcheck'
     default: 'c++23'
+  cppcheck_enable:
+    description: 'Comma-separated cppcheck --enable categories'
+    default: 'warning,style,performance,portability'
   cppcheck_suppress:
     description: 'Path to cppcheck suppressions file'
     default: ''
@@ -32,6 +35,12 @@ inputs:
   exclude_file:
     description: 'Path to file listing excluded paths'
     default: ''
+  path:
+    description: 'Subdirectory to scope file detection to'
+    default: '.'
+  max_annotations:
+    description: 'Maximum number of annotations to emit'
+    default: '50'
 
 outputs:
   findings:
@@ -47,19 +56,22 @@ runs:
         file_extensions: ${{ inputs.file_extensions }}
         base_ref: ${{ inputs.base_ref }}
         exclude_file: ${{ inputs.exclude_file }}
+        path: ${{ inputs.path }}
 
     - id: check
       if: steps.files.outputs.count != '0'
       shell: bash
+      env:
+        CHANGED_FILES: ${{ steps.files.outputs.files }}
       run: |
-        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+        echo "$CHANGED_FILES" > "${{ runner.temp }}/changed_cpp_files.txt"
 
         SETUP_CMD=""
         if [ -n "${{ inputs.source_setup }}" ]; then
           SETUP_CMD="${{ inputs.source_setup }} && "
         fi
 
-        ARGS="--enable=warning,style,performance,portability --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr --error-exitcode=0"
+        ARGS="--enable=${{ inputs.cppcheck_enable }} --template=gcc --std=${{ inputs.cppcheck_std }} --inline-suppr --error-exitcode=0"
 
         if [ -n "${{ inputs.cppcheck_suppress }}" ] && [ -f "${{ inputs.cppcheck_suppress }}" ]; then
           ARGS="$ARGS --suppressions-list=${{ inputs.cppcheck_suppress }}"
@@ -78,20 +90,22 @@ runs:
           done < "${{ inputs.cppcheck_include_file }}"
         fi
 
-        FILES=$(cat /tmp/changed_cpp_files.txt | tr '\n' ' ')
+        FILES=$(cat "${{ runner.temp }}/changed_cpp_files.txt" | tr '\n' ' ')
         MOUNT="${{ inputs.source_mount }}"
+        MAX_ANN="${{ inputs.max_annotations }}"
+        OUTPUT_FILE="${{ runner.temp }}/cppcheck_output.txt"
 
         docker run --rm \
           -v "${{ github.workspace }}:${MOUNT}" \
           -w "${MOUNT}" \
           "${{ inputs.docker_image }}" \
           bash -c "${SETUP_CMD}cppcheck ${ARGS} ${INCLUDE_ARGS} ${FILES}" \
-          > /tmp/cppcheck_output.txt 2>&1 || true
+          > "${OUTPUT_FILE}" 2>&1 || true
 
-        FINDINGS=$(grep -cE '^.+:[0-9]+:.*(error|warning|style|performance|portability):' /tmp/cppcheck_output.txt || echo 0)
+        FINDINGS=$(grep -cE '^.+:[0-9]+:.*(error|warning|style|performance|portability):' "${OUTPUT_FILE}" || echo 0)
 
-        # Emit annotations (max 50)
-        grep -E '^.+:[0-9]+:.*(error|warning|style|performance|portability):' /tmp/cppcheck_output.txt | head -50 | while IFS= read -r line; do
+        # Emit annotations
+        grep -E '^.+:[0-9]+:.*(error|warning|style|performance|portability):' "${OUTPUT_FILE}" | head -"${MAX_ANN}" | while IFS= read -r line; do
           ann_file=$(echo "$line" | cut -d: -f1)
           ann_line=$(echo "$line" | cut -d: -f2)
           message=$(echo "$line" | cut -d: -f3-)

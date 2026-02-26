@@ -5,12 +5,24 @@ inputs:
   severity:
     description: 'Minimum severity: error, warning, info, style'
     default: 'warning'
+  file_extensions:
+    description: 'Space-separated shell file extensions'
+    default: 'sh bash'
   base_ref:
     description: 'Base branch for diff comparison'
     default: ''
   exclude_file:
     description: 'Path to file listing excluded paths'
     default: ''
+  path:
+    description: 'Subdirectory to scope file detection to'
+    default: '.'
+  shellcheck_exclude:
+    description: 'Comma-separated ShellCheck rule codes to exclude (e.g. SC1091,SC2034)'
+    default: ''
+  max_annotations:
+    description: 'Maximum number of annotations to emit'
+    default: '50'
 
 outputs:
   violations:
@@ -23,9 +35,10 @@ runs:
     - id: files
       uses: PavelGuzenfeld/standard/actions/diff-files@main
       with:
-        file_extensions: 'sh bash'
+        file_extensions: ${{ inputs.file_extensions }}
         base_ref: ${{ inputs.base_ref }}
         exclude_file: ${{ inputs.exclude_file }}
+        path: ${{ inputs.path }}
 
     - shell: bash
       run: |
@@ -36,17 +49,27 @@ runs:
     - id: check
       if: steps.files.outputs.count != '0'
       shell: bash
+      env:
+        CHANGED_FILES: ${{ steps.files.outputs.files }}
       run: |
-        echo "${{ steps.files.outputs.files }}" > /tmp/changed_scripts.txt
+        echo "$CHANGED_FILES" > "${{ runner.temp }}/changed_scripts.txt"
         VIOLATIONS=0
+        ANN_COUNT=0
+        MAX_ANN="${{ inputs.max_annotations }}"
+
+        EXCLUDE_ARG=""
+        if [ -n "${{ inputs.shellcheck_exclude }}" ]; then
+          EXCLUDE_ARG="--exclude=${{ inputs.shellcheck_exclude }}"
+        fi
 
         while IFS= read -r file; do
           [ -z "$file" ] && continue
           [ -f "$file" ] || continue
 
-          OUTPUT=$(shellcheck --severity="${{ inputs.severity }}" --format=gcc "$file" 2>&1 || true)
+          OUTPUT=$(shellcheck --severity="${{ inputs.severity }}" --format=gcc ${EXCLUDE_ARG} "$file" 2>&1 || true)
           if [ -n "$OUTPUT" ]; then
             echo "$OUTPUT" | while IFS= read -r line; do
+              if [ "$ANN_COUNT" -ge "$MAX_ANN" ]; then break; fi
               ann_file=$(echo "$line" | cut -d: -f1)
               ann_line=$(echo "$line" | cut -d: -f2)
               ann_col=$(echo "$line" | cut -d: -f3)
@@ -56,10 +79,11 @@ runs:
                 error) echo "::error file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
                 *)     echo "::warning file=${ann_file},line=${ann_line},col=${ann_col}::ShellCheck:${message}" ;;
               esac
+              ANN_COUNT=$((ANN_COUNT + 1))
             done
             VIOLATIONS=$((VIOLATIONS + 1))
           fi
-        done < /tmp/changed_scripts.txt
+        done < "${{ runner.temp }}/changed_scripts.txt"
 
         echo "violations=$VIOLATIONS" >> $GITHUB_OUTPUT
         echo "shellcheck: $VIOLATIONS file(s) with violations"

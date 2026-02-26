@@ -11,6 +11,12 @@ inputs:
   base_ref:
     description: 'Base branch for diff comparison'
     default: ''
+  path:
+    description: 'Repository path to scan'
+    default: '.'
+  max_annotations:
+    description: 'Maximum number of annotations to emit'
+    default: '50'
 
 outputs:
   secrets:
@@ -24,34 +30,37 @@ runs:
       run: |
         VERSION="${{ inputs.gitleaks_version }}"
         curl -sL "https://github.com/gitleaks/gitleaks/releases/download/${VERSION}/gitleaks_${VERSION#v}_linux_x64.tar.gz" \
-          -o /tmp/gitleaks.tar.gz
-        tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-        chmod +x /tmp/gitleaks
+          -o "${{ runner.temp }}/gitleaks.tar.gz"
+        tar -xzf "${{ runner.temp }}/gitleaks.tar.gz" -C "${{ runner.temp }}" gitleaks
+        chmod +x "${{ runner.temp }}/gitleaks"
 
     - id: scan
       shell: bash
       run: |
         BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
+        MAX_ANN="${{ inputs.max_annotations }}"
 
         CONFIG_ARG=""
         if [ -n "${{ inputs.gitleaks_config }}" ] && [ -f "${{ inputs.gitleaks_config }}" ]; then
           CONFIG_ARG="--config ${{ inputs.gitleaks_config }}"
         fi
 
-        /tmp/gitleaks detect --source=. \
+        REPORT_FILE="${{ runner.temp }}/gitleaks-report.json"
+
+        "${{ runner.temp }}/gitleaks" detect --source=${{ inputs.path }} \
           --log-opts="origin/${BASE}..HEAD" \
-          --report-path=/tmp/gitleaks-report.json \
+          --report-path="${REPORT_FILE}" \
           --report-format=json \
           $CONFIG_ARG --exit-code=0 || true
 
         SECRETS=0
-        if [ -f /tmp/gitleaks-report.json ] && [ -s /tmp/gitleaks-report.json ]; then
+        if [ -f "${REPORT_FILE}" ] && [ -s "${REPORT_FILE}" ]; then
           if command -v jq &>/dev/null; then
-            SECRETS=$(jq 'length' /tmp/gitleaks-report.json)
+            SECRETS=$(jq 'length' "${REPORT_FILE}")
             jq -r '.[] | "::error file=\(.File),line=\(.StartLine)::Gitleaks: \(.Description) [\(.RuleID)]"' \
-              /tmp/gitleaks-report.json
+              "${REPORT_FILE}" | head -"${MAX_ANN}"
           else
-            SECRETS=$(python3 -c "import json; print(len(json.load(open('/tmp/gitleaks-report.json'))))" 2>/dev/null || echo "1")
+            SECRETS=$(python3 -c "import json; print(len(json.load(open('${REPORT_FILE}'))))" 2>/dev/null || echo "1")
             echo "::warning::jq unavailable — see gitleaks report artifact for details"
           fi
         fi

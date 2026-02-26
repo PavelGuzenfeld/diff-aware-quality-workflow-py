@@ -29,6 +29,15 @@ inputs:
   exclude_file:
     description: 'Path to file listing excluded paths'
     default: ''
+  path:
+    description: 'Subdirectory to scope file detection to'
+    default: '.'
+  max_annotations:
+    description: 'Maximum number of annotations to emit'
+    default: '50'
+  pre_analysis_script:
+    description: 'Script path (in repo) to run inside Docker before analysis'
+    default: ''
 
 outputs:
   warnings:
@@ -47,12 +56,26 @@ runs:
         file_extensions: ${{ inputs.file_extensions }}
         base_ref: ${{ inputs.base_ref }}
         exclude_file: ${{ inputs.exclude_file }}
+        path: ${{ inputs.path }}
+
+    - id: pre
+      if: steps.files.outputs.count != '0' && inputs.pre_analysis_script != ''
+      shell: bash
+      run: |
+        MOUNT="${{ inputs.source_mount }}"
+        docker run --rm \
+          -v "${{ github.workspace }}:${MOUNT}" \
+          -w "${MOUNT}" \
+          "${{ inputs.docker_image }}" \
+          bash -c "${{ inputs.pre_analysis_script }}"
 
     - id: tidy
       if: steps.files.outputs.count != '0'
       shell: bash
+      env:
+        CHANGED_FILES: ${{ steps.files.outputs.files }}
       run: |
-        echo "${{ steps.files.outputs.files }}" > /tmp/changed_cpp_files.txt
+        echo "$CHANGED_FILES" > "${{ github.workspace }}/changed_cpp_files.txt"
 
         SETUP_CMD=""
         if [ -n "${{ inputs.source_setup }}" ]; then
@@ -66,23 +89,22 @@ runs:
 
         JOBS="${{ inputs.clang_tidy_jobs }}"
         MOUNT="${{ inputs.source_mount }}"
+        MAX_ANN="${{ inputs.max_annotations }}"
+        OUTPUT_FILE="${{ runner.temp }}/clang_tidy_output.txt"
 
         docker run --rm \
           -v "${{ github.workspace }}:${MOUNT}" \
           -w "${MOUNT}" \
           "${{ inputs.docker_image }}" \
           bash -c "${SETUP_CMD}cat changed_cpp_files.txt | xargs -P${JOBS} -I{} clang-tidy -p ${{ inputs.compile_commands_path }} ${CONFIG_ARG} {} 2>&1" \
-          > /tmp/clang_tidy_output.txt 2>&1 || true
-
-        # Copy changed files list into container mount
-        cp /tmp/changed_cpp_files.txt "${{ github.workspace }}/changed_cpp_files.txt"
+          > "${OUTPUT_FILE}" 2>&1 || true
 
         # Parse findings
-        WARNS=$(grep -cE '^.+:[0-9]+:[0-9]+: warning:' /tmp/clang_tidy_output.txt || echo 0)
-        ERRS=$(grep -E '^.+:[0-9]+:[0-9]+: error:' /tmp/clang_tidy_output.txt | grep -cv 'clang-diagnostic-' || echo 0)
+        WARNS=$(grep -cE '^.+:[0-9]+:[0-9]+: warning:' "${OUTPUT_FILE}" || echo 0)
+        ERRS=$(grep -E '^.+:[0-9]+:[0-9]+: error:' "${OUTPUT_FILE}" | grep -cv 'clang-diagnostic-' || echo 0)
 
-        # Emit annotations (max 50)
-        grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' /tmp/clang_tidy_output.txt | head -50 | while IFS= read -r line; do
+        # Emit annotations
+        grep -E '^.+:[0-9]+:[0-9]+: (warning|error):' "${OUTPUT_FILE}" | head -"${MAX_ANN}" | while IFS= read -r line; do
           ann_file=$(echo "$line" | cut -d: -f1)
           ann_line=$(echo "$line" | cut -d: -f2)
           ann_col=$(echo "$line" | cut -d: -f3)

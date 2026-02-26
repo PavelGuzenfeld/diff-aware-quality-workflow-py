@@ -11,6 +11,9 @@ inputs:
   exclude_file:
     description: 'Path to file listing excluded paths (one per line, # comments)'
     default: ''
+  path:
+    description: 'Subdirectory to scope file detection to'
+    default: '.'
 
 outputs:
   files:
@@ -27,9 +30,10 @@ runs:
       shell: bash
       run: |
         BASE="${{ inputs.base_ref || github.base_ref || 'main' }}"
+        SCOPE="${{ inputs.path }}"
         EXT_PATTERN="\.($(echo "${{ inputs.file_extensions }}" | tr ' ' '|'))$"
 
-        FILES=$(git diff --name-only --diff-filter=ACMR "origin/${BASE}" -- \
+        FILES=$(git diff --name-only --diff-filter=ACMR "origin/${BASE}" -- "${SCOPE}" \
           | grep -E "$EXT_PATTERN" || true)
 
         if [ -n "${{ inputs.exclude_file }}" ] && [ -f "${{ inputs.exclude_file }}" ]; then
