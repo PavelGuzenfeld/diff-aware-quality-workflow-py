@@ -15,6 +15,10 @@ on:
         type: number
         default: 100
         description: 'Maximum number of repos to scan (controls runtime)'
+      active_months:
+        type: number
+        default: 6
+        description: 'Only scan repos pushed within this many months (0 = all repos)'
       min_score:
         type: number
         default: 0
@@ -94,6 +98,7 @@ jobs:
           ORG="${{ inputs.org }}"
           EXPLICIT="${{ inputs.repos }}"
           MAX="${{ inputs.max_repos }}"
+          ACTIVE_MONTHS="${{ inputs.active_months }}"
 
           if [ -n "$EXPLICIT" ]; then
             # Use explicit list
@@ -107,16 +112,24 @@ jobs:
               REPOS="${REPOS}${ITEM}"$'\n'
             done
           else
+            # Build jq filter — optionally restrict to recently-pushed repos
+            JQ_FILTER='.[] | select(.archived == false and .fork == false) | .full_name'
+            if [ "$ACTIVE_MONTHS" -gt 0 ] 2>/dev/null; then
+              CUTOFF=$(date -u -d "${ACTIVE_MONTHS} months ago" +%Y-%m-%dT%H:%M:%SZ)
+              JQ_FILTER=".[] | select(.archived == false and .fork == false and .pushed_at >= \"${CUTOFF}\") | .full_name"
+              echo "Filtering to repos active since ${CUTOFF}"
+            fi
+
             # Auto-discover: all non-archived, non-fork repos
             # Try org endpoint first, fall back to user endpoint
             REPOS=""
             if CANDIDATE=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+              --jq "$JQ_FILTER" 2>/dev/null); then
               REPOS="$CANDIDATE"
             fi
             if [ -z "$REPOS" ]; then
               if CANDIDATE=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+                --jq "$JQ_FILTER" 2>/dev/null); then
                 REPOS="$CANDIDATE"
               fi
             fi
