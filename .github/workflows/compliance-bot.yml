@@ -76,6 +76,11 @@ jobs:
         run: |
           standard-ci scan --org "${{ inputs.org }}" --json \
             > "${{ runner.temp }}/scan-results.json"
+
+      - name: Generate dashboard summary
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.bot_token || github.token }}
+        run: |
           standard-ci dashboard --org "${{ inputs.org }}" \
             --scan-results "${{ runner.temp }}/scan-results.json" \
             >> $GITHUB_STEP_SUMMARY

@@ -244,7 +244,7 @@ def cmd_scan(args):
     from standard_ci.scanner import scan_org
 
     token = args.token or os.environ.get("GITHUB_TOKEN", "")
-    print(f"Scanning {args.org}...")
+    print(f"Scanning {args.org}...", file=sys.stderr)
 
     try:
         results, latest_tag, latest_sha = scan_org(args.org, token)
@@ -262,18 +262,18 @@ def cmd_scan(args):
         drifted = [r for r in configured if not r["up_to_date"]]
         unconfigured = [r for r in results if not r["has_config"]]
 
-        print(f"\nLatest: {latest_tag} ({latest_sha[:12]})\n")
+        print(f"\nLatest: {latest_tag} ({latest_sha[:12]})\n", file=sys.stderr)
         for r in sorted(results, key=lambda x: x["repo"]):
             name = r["repo"].split("/")[-1]
             if r["has_config"] and r["up_to_date"]:
-                print(f"  {name:<30} {r['current_tag']:<12} OK")
+                print(f"  {name:<30} {r['current_tag']:<12} OK", file=sys.stderr)
             elif r["has_config"]:
-                print(f"  {name:<30} {r['current_tag']:<12} DRIFT -> {latest_tag}")
+                print(f"  {name:<30} {r['current_tag']:<12} DRIFT -> {latest_tag}", file=sys.stderr)
             else:
-                print(f"  {name:<30} {'':12} NO CONFIG")
+                print(f"  {name:<30} {'':12} NO CONFIG", file=sys.stderr)
 
         print(f"\n{len(results)} repos: {len(current)} current, "
-              f"{len(drifted)} drifted, {len(unconfigured)} unconfigured")
+              f"{len(drifted)} drifted, {len(unconfigured)} unconfigured", file=sys.stderr)
 
     if args.exit_code:
         drifted = [r for r in results if r["has_config"] and not r["up_to_date"]]
@@ -291,8 +291,21 @@ def cmd_dashboard(args):
     if args.scan_results:
         import json
 
-        with open(args.scan_results) as f:
-            data = json.load(f)
+        try:
+            with open(args.scan_results) as f:
+                content = f.read()
+            if not content.strip():
+                print(f"Error: scan results file is empty: {args.scan_results}",
+                      file=sys.stderr)
+                sys.exit(1)
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Error: invalid JSON in scan results: {e}", file=sys.stderr)
+            sys.exit(1)
+        except FileNotFoundError:
+            print(f"Error: scan results file not found: {args.scan_results}",
+                  file=sys.stderr)
+            sys.exit(1)
         results = data["repos"]
         latest_tag = data["latest_tag"]
         latest_sha = data["latest_sha"]
@@ -319,8 +332,21 @@ def cmd_auto_update(args):
     if args.scan_results:
         import json
 
-        with open(args.scan_results) as f:
-            data = json.load(f)
+        try:
+            with open(args.scan_results) as f:
+                content = f.read()
+            if not content.strip():
+                print(f"Error: scan results file is empty: {args.scan_results}",
+                      file=sys.stderr)
+                sys.exit(1)
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Error: invalid JSON in scan results: {e}", file=sys.stderr)
+            sys.exit(1)
+        except FileNotFoundError:
+            print(f"Error: scan results file not found: {args.scan_results}",
+                  file=sys.stderr)
+            sys.exit(1)
         scan_results = data["repos"]
         latest_tag = data["latest_tag"]
         latest_sha = data["latest_sha"]
