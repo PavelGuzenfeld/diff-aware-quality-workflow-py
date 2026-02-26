@@ -15,10 +15,6 @@ on:
         type: number
         default: 100
         description: 'Maximum number of repos to scan (controls runtime)'
-      active_months:
-        type: number
-        default: 6
-        description: 'Only scan repos pushed to within this many months (0 = all repos)'
       min_score:
         type: number
         default: 0
@@ -98,14 +94,6 @@ jobs:
           ORG="${{ inputs.org }}"
           EXPLICIT="${{ inputs.repos }}"
           MAX="${{ inputs.max_repos }}"
-          ACTIVE_MONTHS="${{ inputs.active_months }}"
-
-          # Compute cutoff date for active repos filter
-          CUTOFF=""
-          if [ "$ACTIVE_MONTHS" -gt 0 ] 2>/dev/null; then
-            CUTOFF=$(date -u -d "${ACTIVE_MONTHS} months ago" '+%Y-%m-%dT%H:%M:%SZ')
-            echo "Activity filter: repos pushed after ${CUTOFF} (last ${ACTIVE_MONTHS} months)"
-          fi
 
           if [ -n "$EXPLICIT" ]; then
             # Use explicit list
@@ -120,30 +108,18 @@ jobs:
             done
           else
             # Auto-discover: all non-archived, non-fork repos
-            # Fetch full_name and pushed_at, then filter by activity in shell
+            # Try org endpoint first, fall back to user endpoint
             REPOS=""
-            BASE_JQ='.[] | select(.archived == false and .fork == false) | [.full_name, .pushed_at] | @tsv'
-
-            RAW=""
             if CANDIDATE=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq "$BASE_JQ" 2>/dev/null); then
-              RAW="$CANDIDATE"
+              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+              REPOS="$CANDIDATE"
             fi
-            if [ -z "$RAW" ]; then
+            if [ -z "$REPOS" ]; then
               if CANDIDATE=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq "$BASE_JQ" 2>/dev/null); then
-                RAW="$CANDIDATE"
+                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+                REPOS="$CANDIDATE"
               fi
             fi
-
-            # Filter by activity cutoff (if set)
-            while IFS=$'\t' read -r NAME PUSHED; do
-              [ -z "$NAME" ] && continue
-              if [ -n "$CUTOFF" ] && [ "$PUSHED" \< "$CUTOFF" ]; then
-                continue
-              fi
-              REPOS="${REPOS}${NAME}"$'\n'
-            done <<< "$RAW"
 
             # Apply max_repos limit
             REPOS=$(echo "$REPOS" | head -n "$MAX")
