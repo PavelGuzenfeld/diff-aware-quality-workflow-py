@@ -53,9 +53,15 @@ jobs:
       - name: Install standard-ci
         run: pip install .
 
+      - name: Check App credentials
+        id: app-check
+        env:
+          HAS_APP: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        run: echo "available=$HAS_APP" >> $GITHUB_OUTPUT
+
       - name: Generate App token
         id: app-token
-        if: secrets.app_id != '' && secrets.app_private_key != ''
+        if: steps.app-check.outputs.available == 'true'
         uses: actions/create-github-app-token@v2
         continue-on-error: true
         with:
