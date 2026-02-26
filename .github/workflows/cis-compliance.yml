@@ -74,9 +74,20 @@ jobs:
           fi
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
 
+      - name: Check for App credentials
+        id: check-app
+        env:
+          HAS_APP_ID: ${{ secrets.app_id }}
+        run: |
+          if [ -n "$HAS_APP_ID" ]; then
+            echo "available=true" >> $GITHUB_OUTPUT
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Generate GitHub App token
         id: app-token
-        if: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        if: steps.check-app.outputs.available == 'true'
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.app_id }}
