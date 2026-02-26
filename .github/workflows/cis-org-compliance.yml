@@ -10,7 +10,7 @@ on:
       repos:
         type: string
         default: ''
-        description: 'Comma-separated repo names to scan (empty = all repos with .standard.yml)'
+        description: 'Comma-separated repo names to scan (empty = all non-archived repos)'
       max_repos:
         type: number
         default: 20
@@ -101,31 +101,20 @@ jobs:
             IFS=',' read -ra ITEMS <<< "$EXPLICIT"
             for ITEM in "${ITEMS[@]}"; do
               ITEM=$(echo "$ITEM" | xargs)  # trim whitespace
-              # Add org prefix if missing
               if [[ "$ITEM" != */* ]]; then
                 ITEM="${ORG}/${ITEM}"
               fi
               REPOS="${REPOS}${ITEM}"$'\n'
             done
           else
-            # Auto-discover: non-archived repos that have .standard.yml
-            ALL_REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null \
+            # Auto-discover: all non-archived, non-fork repos in the org
+            REPOS=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
+              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null \
               || gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false) | .full_name' 2>/dev/null)
+              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null)
 
-            REPOS=""
-            COUNT=0
-            while IFS= read -r REPO; do
-              [ -z "$REPO" ] && continue
-              # Check if repo has .standard.yml
-              if gh api "repos/${REPO}/contents/.standard.yml" --jq '.name' >/dev/null 2>&1; then
-                REPOS="${REPOS}${REPO}"$'\n'
-                COUNT=$((COUNT + 1))
-                echo "  Found: ${REPO}"
-                [ "$COUNT" -ge "$MAX" ] && break
-              fi
-            done <<< "$ALL_REPOS"
+            # Apply max_repos limit
+            REPOS=$(echo "$REPOS" | head -n "$MAX")
           fi
 
           # Write repo list to file
@@ -177,12 +166,19 @@ jobs:
           REPO_COUNT=0
           FAILING_REPOS=""
 
+          # --- Summary table ---
           {
             echo "## CIS Software Supply Chain v1.0 — ${ORG}"
+            echo ""
+            echo "### Summary"
             echo ""
             echo "| Repo | Passed | Failed | Unknown | Score | Status |"
             echo "|:-----|:------:|:------:|:-------:|:-----:|:------:|"
           } > /tmp/cis-dashboard.md
+
+          # Collect all unique control IDs across repos for the matrix
+          ALL_IDS_FILE="/tmp/cis-all-ids.txt"
+          > "$ALL_IDS_FILE"
 
           while IFS= read -r REPO; do
             [ -z "$REPO" ] && continue
@@ -195,12 +191,8 @@ jobs:
               PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' "$RESULT_FILE" 2>/dev/null) || PASSED=0
               FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' "$RESULT_FILE" 2>/dev/null) || FAILED=0
               UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' "$RESULT_FILE" 2>/dev/null) || UNKNOWN=0
-            else
-              LOG_FILE="/tmp/cis-results/${REPO_SHORT}.log"
-              if [ -f "$LOG_FILE" ]; then
-                PASSED=$(grep -c "PASSED" "$LOG_FILE" 2>/dev/null) || PASSED=0
-                FAILED=$(grep -c "FAILED" "$LOG_FILE" 2>/dev/null) || FAILED=0
-              fi
+              # Collect control IDs
+              jq -r '.Results[].Results[] | .ID' "$RESULT_FILE" 2>/dev/null >> "$ALL_IDS_FILE" || true
             fi
 
             TOTAL=$((PASSED + FAILED + UNKNOWN))
@@ -228,7 +220,7 @@ jobs:
 
           done < /tmp/repo-list.txt
 
-          # Summary
+          # Summary stats
           AVG_PERCENT=0
           [ "$TOTAL_CHECKS" -gt 0 ] && AVG_PERCENT=$((TOTAL_PASSED * 100 / TOTAL_CHECKS))
 
@@ -238,6 +230,46 @@ jobs:
             if [ "$MIN_SCORE" -gt 0 ]; then
               echo "**Minimum threshold:** ${MIN_SCORE}/35"
             fi
+          } >> /tmp/cis-dashboard.md
+
+          # --- Detailed per-repo breakdown ---
+          while IFS= read -r REPO; do
+            [ -z "$REPO" ] && continue
+            REPO_SHORT="${REPO##*/}"
+            RESULT_FILE="/tmp/cis-results/${REPO_SHORT}.json"
+
+            {
+              echo ""
+              echo "---"
+              echo ""
+              echo "### ${REPO_SHORT}"
+              echo ""
+            } >> /tmp/cis-dashboard.md
+
+            if [ -f "$RESULT_FILE" ] && [ -s "$RESULT_FILE" ]; then
+              {
+                echo "| ID | Control | Result | Reason |"
+                echo "|:---|:--------|:------:|:-------|"
+                jq -r '
+                  .Results[].Results[] |
+                  .ID as $id | .Name as $name | .Reason as $reason |
+                  if .Result == 0 then
+                    "| \($id) | \($name) | ✅ Pass | |"
+                  elif .Result == 1 then
+                    "| \($id) | \($name) | ❌ Fail | \($reason // "") |"
+                  else
+                    "| \($id) | \($name) | ⚠️ Unknown | \($reason // "") |"
+                  end
+                ' "$RESULT_FILE" 2>/dev/null || echo "*(JSON parsing failed — see scan log artifact)*"
+              } >> /tmp/cis-dashboard.md
+            else
+              echo "*(No results — chain-bench may have failed. See scan log artifact.)*" >> /tmp/cis-dashboard.md
+            fi
+
+          done < /tmp/repo-list.txt
+
+          # Footer
+          {
             echo ""
             echo "---"
             echo "<sub>Scanned by <a href=\"https://github.com/aquasecurity/chain-bench\">chain-bench</a> v${{ inputs.chain_bench_version }} via <a href=\"https://github.com/PavelGuzenfeld/standard\">standard</a></sub>"
