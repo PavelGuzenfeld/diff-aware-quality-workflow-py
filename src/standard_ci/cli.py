@@ -123,7 +123,7 @@ def cmd_init(args):
 
     config_path = os.path.join(project_dir, ".standard.yml")
     write_config(config_path, config_data)
-    print(f"  Generated: .standard.yml")
+    print("  Generated: .standard.yml")
     print(f"\nDone! {len(generated)} workflow(s) pinned to {tag_name} ({sha[:12]})")
 
 

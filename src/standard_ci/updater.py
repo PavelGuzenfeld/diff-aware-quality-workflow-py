@@ -2,8 +2,8 @@
 
 import json
 import subprocess
-import urllib.request
 import urllib.error
+import urllib.request
 
 REPO = "PavelGuzenfeld/standard"
 API_URL = f"https://api.github.com/repos/{REPO}/tags"

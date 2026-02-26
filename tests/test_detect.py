@@ -1,7 +1,5 @@
 """Tests for project type auto-detection."""
 
-import os
-
 from standard_ci.detect import detect_languages, has_dockerfiles, has_shell_scripts
 
 

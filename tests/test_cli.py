@@ -1,11 +1,9 @@
 """End-to-end tests for the standard-ci CLI."""
 
-import os
 from unittest import mock
 
 from standard_ci.cli import main
 from standard_ci.config import read_config
-
 
 FAKE_SHA = "abc123def456789012345678901234567890abcd"
 FAKE_TAG = "v2.2.3.4"
