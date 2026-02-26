@@ -311,13 +311,13 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | AGENTS.md generator (generate-agents-md.sh) | Done | - |
 | Binary hardening verification | Done | cpp-quality.yml |
 | Trend dashboard | Done | trend-dashboard.yml |
-| `standard-ci` CLI tool (v0.12.0) | Done | pip install |
+| `standard-ci` CLI tool (v0.13.2) | Done | pip install |
 
 ---
 
 ## Packaging & Enforcement Roadmap
 
-### Phase 1: `standard-ci` CLI (v0.12.0) — Done
+### Phase 1: `standard-ci` CLI (v0.13.2) — Done
 
 Python CLI (`pip install`) that replaces `generate-workflow.sh` with a proper tool:
 

@@ -64,7 +64,13 @@ def _resolve_via_git(tag):
         raise RuntimeError("No tags found via git ls-remote")
 
     if tag is None:
-        # Last entry is the latest
+        # Sort by version-like tag names (v1.2.3) to find latest
+        def _version_key(entry):
+            import re
+            nums = re.findall(r"\d+", entry[1])
+            return tuple(int(n) for n in nums) if nums else ()
+
+        entries.sort(key=_version_key)
         return entries[-1]
     for sha, name in entries:
         if name == tag:
