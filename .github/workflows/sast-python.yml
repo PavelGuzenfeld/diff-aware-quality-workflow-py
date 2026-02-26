@@ -58,7 +58,12 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Run Semgrep
-        run: semgrep scan --config ${{ inputs.semgrep_rules }} --sarif --output=semgrep.sarif --error
+        run: |
+          ARGS=""
+          for rule in ${{ inputs.semgrep_rules }}; do
+            ARGS="$ARGS --config $rule"
+          done
+          semgrep scan $ARGS --sarif --output=semgrep.sarif --error
         continue-on-error: true
         id: semgrep-scan
 
