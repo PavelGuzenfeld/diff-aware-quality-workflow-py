@@ -51,6 +51,13 @@ on:
         type: string
         default: 'package.json'
         description: 'Path to package.json'
+    secrets:
+      app_id:
+        required: false
+        description: 'GitHub App ID for pushing to protected branches'
+      app_private_key:
+        required: false
+        description: 'GitHub App private key (PEM)'
 
 permissions:
   contents: write
@@ -60,9 +67,24 @@ jobs:
     name: Sync Version Files
     runs-on: ubuntu-latest
     steps:
+      - name: Check for GitHub App credentials
+        id: app-check
+        env:
+          HAS_APP: ${{ secrets.app_id != '' && secrets.app_private_key != '' }}
+        run: echo "has_app=$HAS_APP" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub App token
+        if: steps.app-check.outputs.has_app == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.default_branch }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
       - name: Update version files
         run: |
