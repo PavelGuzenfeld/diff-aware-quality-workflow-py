@@ -314,6 +314,7 @@ Useful for initial onboarding of legacy codebases or periodic audits.
 | `standard-ci` CLI tool (v0.13.2) | Done | pip install |
 | Starter workflow templates | Done | PavelGuzenfeld/.github |
 | Composite actions (7 actions) | Done | actions/ directory |
+| Compliance workflow + CLI | Done | compliance.yml |
 
 ---
 
@@ -362,22 +363,14 @@ standard-ci check
 
 Usage: `uses: PavelGuzenfeld/standard/actions/clang-tidy@<sha>` as a step in any job.
 
-### Phase 4: Compliance Bot — Done
+### Phase 4: Compliance — Done
 
-Reusable workflows + CLI subcommands that replace a hosted GitHub App:
+Single reusable workflow (`compliance.yml`) + CLI subcommands:
 
 - **`standard-ci scan --org ORG`** — discovers repos with `.standard.yml`, validates SHA pins against latest release
 - **`standard-ci auto-update --org ORG`** — clones drifted repos, updates SHA pins, opens PRs (like Dependabot for standard)
 - **`standard-ci dashboard --org ORG`** — generates markdown or JSON compliance report
-- **`compliance-bot.yml`** — reusable workflow: scan + open update PRs on new releases
-- **`compliance-dashboard.yml`** — reusable workflow: scheduled dashboard with gist/artifact output
+- **`compliance.yml`** — reusable workflow: scan + dashboard (always), auto-update PRs (opt-in via `auto_update: true`)
+- Each org runs a trigger workflow from its `.github` repo (e.g. `PavelGuzenfeld/.github`, `thebandofficial/.github`)
 - Supports GitHub App token or PAT for cross-repo access
 - All logic in pure Python CLI (zero dependencies), testable locally
-
-### Phase 5: Gemini Code Assist Integration
-
-Leverage the `.gemini/` configuration pattern for AI-assisted enforcement:
-
-- `.gemini/settings.json` can reference standard's AGENTS.md for code review context
-- Gemini Code Assist applies coding conventions during PR review
-- Complements static analysis with AI-powered pattern detection
