@@ -13,8 +13,12 @@ on:
         description: 'Comma-separated repo names to scan (empty = all non-archived repos)'
       max_repos:
         type: number
-        default: 20
+        default: 100
         description: 'Maximum number of repos to scan (controls runtime)'
+      active_months:
+        type: number
+        default: 6
+        description: 'Only scan repos pushed to within this many months (0 = all repos)'
       min_score:
         type: number
         default: 0
@@ -94,6 +98,14 @@ jobs:
           ORG="${{ inputs.org }}"
           EXPLICIT="${{ inputs.repos }}"
           MAX="${{ inputs.max_repos }}"
+          ACTIVE_MONTHS="${{ inputs.active_months }}"
+
+          # Compute cutoff date for active repos filter
+          CUTOFF=""
+          if [ "$ACTIVE_MONTHS" -gt 0 ] 2>/dev/null; then
+            CUTOFF=$(date -u -d "${ACTIVE_MONTHS} months ago" '+%Y-%m-%dT%H:%M:%SZ')
+            echo "Activity filter: repos pushed after ${CUTOFF} (last ${ACTIVE_MONTHS} months)"
+          fi
 
           if [ -n "$EXPLICIT" ]; then
             # Use explicit list
@@ -109,16 +121,20 @@ jobs:
           else
             # Auto-discover: all non-archived, non-fork repos
             # Try org endpoint first, fall back to user endpoint
-            # Note: gh api outputs error JSON to stdout on 404, so we validate
-            # that results look like "owner/repo" names before accepting them
             REPOS=""
+            JQ_FILTER='.[] | select(.archived == false and .fork == false)'
+            if [ -n "$CUTOFF" ]; then
+              JQ_FILTER="${JQ_FILTER} | select(.pushed_at > \"${CUTOFF}\")"
+            fi
+            JQ_FILTER="${JQ_FILTER} | .full_name"
+
             if CANDIDATE=$(gh api --paginate "/orgs/${ORG}/repos?type=sources&per_page=100" \
-              --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+              --jq "$JQ_FILTER" 2>/dev/null); then
               REPOS="$CANDIDATE"
             fi
             if [ -z "$REPOS" ]; then
               if CANDIDATE=$(gh api --paginate "/users/${ORG}/repos?type=sources&per_page=100" \
-                --jq '.[] | select(.archived == false and .fork == false) | .full_name' 2>/dev/null); then
+                --jq "$JQ_FILTER" 2>/dev/null); then
                 REPOS="$CANDIDATE"
               fi
             fi
