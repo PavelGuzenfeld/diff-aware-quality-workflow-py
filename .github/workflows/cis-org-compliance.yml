@@ -146,10 +146,12 @@ jobs:
                   m = re.match(r'^(\d+\.\d+\.\d+)\s+(.+?)\s+(Passed|Failed|Unknown)\s*(.*)', clean)
                   if m:
                       rid, name, result, reason = m.groups()
-                      rval = {'Passed': 0, 'Failed': 1, 'Unknown': 2}[result]
-                      results.append({'ID': rid, 'Name': name.strip(), 'Result': rval, 'Reason': reason.strip()})
+                      entry = {'id': rid, 'name': name.strip(), 'result': result}
+                      if reason.strip():
+                          entry['reason'] = reason.strip()
+                      results.append(entry)
           if results:
-              out = {'Results': [{'Results': results}]}
+              out = {'results': results}
               with open(json_file, 'w') as f:
                   json.dump(out, f)
               print(f'  Parsed {len(results)} controls from log')
@@ -231,11 +233,11 @@ jobs:
             PASSED=0; FAILED=0; UNKNOWN=0
 
             if [ -f "$RESULT_FILE" ] && [ -s "$RESULT_FILE" ]; then
-              PASSED=$(jq '[.Results[].Results[] | select(.Result == 0)] | length' "$RESULT_FILE" 2>/dev/null) || PASSED=0
-              FAILED=$(jq '[.Results[].Results[] | select(.Result == 1)] | length' "$RESULT_FILE" 2>/dev/null) || FAILED=0
-              UNKNOWN=$(jq '[.Results[].Results[] | select(.Result == 2)] | length' "$RESULT_FILE" 2>/dev/null) || UNKNOWN=0
+              PASSED=$(jq '[.results[] | select(.result == "Passed")] | length' "$RESULT_FILE" 2>/dev/null) || PASSED=0
+              FAILED=$(jq '[.results[] | select(.result == "Failed")] | length' "$RESULT_FILE" 2>/dev/null) || FAILED=0
+              UNKNOWN=$(jq '[.results[] | select(.result == "Unknown")] | length' "$RESULT_FILE" 2>/dev/null) || UNKNOWN=0
               # Collect control IDs
-              jq -r '.Results[].Results[] | .ID' "$RESULT_FILE" 2>/dev/null >> "$ALL_IDS_FILE" || true
+              jq -r '.results[] | .id' "$RESULT_FILE" 2>/dev/null >> "$ALL_IDS_FILE" || true
             fi
 
             TOTAL=$((PASSED + FAILED + UNKNOWN))
@@ -309,14 +311,14 @@ jobs:
                 echo "| ID | Control | Result | Reason |"
                 echo "|:---|:--------|:------:|:-------|"
                 jq -r '
-                  .Results[].Results[] |
-                  .ID as $id | .Name as $name | .Reason as $reason |
-                  if .Result == 0 then
-                    "| \($id) | \($name) | ✅ Pass | |"
-                  elif .Result == 1 then
-                    "| \($id) | \($name) | ❌ Fail | \($reason // "") |"
+                  .results[] |
+                  .id as $id | .name as $name | .reason as $reason |
+                  if .result == "Passed" then
+                    "| \($id) | \($name) | Pass | |"
+                  elif .result == "Failed" then
+                    "| \($id) | \($name) | Fail | \($reason // "") |"
                   else
-                    "| \($id) | \($name) | ⚠️ Unknown | \($reason // "") |"
+                    "| \($id) | \($name) | Unknown | \($reason // "") |"
                   end
                 ' "$RESULT_FILE" 2>/dev/null || echo "*(JSON parsing failed — see scan log artifact)*"
               } >> /tmp/cis-dashboard.md
