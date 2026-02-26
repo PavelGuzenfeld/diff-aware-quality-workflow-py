@@ -27,7 +27,7 @@ Commit and push. PRs will now run quality checks.
 
 ## Option 2: Copy from an existing repo
 
-Look at `thebandofficial/rocx/.github/workflows/standards.yml` for a working example
+Look at an existing consumer repo's `.github/workflows/standards.yml` for a working example
 with all features enabled.
 
 ## Presets
@@ -45,7 +45,7 @@ Once `.standard.yml` exists in your repo, the compliance bot will:
 - Automatically open a PR to update them
 - You just review and merge
 
-The bot runs from your org's `.github` repo (e.g. `thebandofficial/.github`).
+The bot runs from your org's `.github` repo (e.g. `my-org/.github`).
 See [COMPLIANCE.md](COMPLIANCE.md) for setup instructions if your org
 doesn't have trigger workflows yet.
 

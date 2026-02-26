@@ -371,6 +371,6 @@ Single reusable workflow (`compliance.yml`) + CLI subcommands:
 - **`standard-ci auto-update --org ORG`** — clones drifted repos, updates SHA pins, opens PRs (like Dependabot for standard)
 - **`standard-ci dashboard --org ORG`** — generates markdown or JSON compliance report
 - **`compliance.yml`** — reusable workflow: scan + dashboard (always), auto-update PRs (opt-in via `auto_update: true`)
-- Each org runs a trigger workflow from its `.github` repo (e.g. `PavelGuzenfeld/.github`, `thebandofficial/.github`)
+- Each org runs a trigger workflow from its `.github` repo
 - Supports GitHub App token or PAT for cross-repo access
 - All logic in pure Python CLI (zero dependencies), testable locally
